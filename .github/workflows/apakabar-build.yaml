@@ -1,0 +1,106 @@
+name: apakabar build
+
+# Builds what our own projects install: one Android library and one Python
+# wheel per Python we run, both from `keep-to-the-script`. Every run leaves
+# them on a release named after the commit, so a project pins a URL rather
+# than a machine that happened to have a compiler that day.
+
+on:
+  push:
+    branches: [keep-to-the-script]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: Android library
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: keep-to-the-script
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build the native libraries
+        shell: bash
+        run: |
+          export SHERPA_ONNX_ENABLE_TTS=OFF
+          export SHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION=OFF
+          export ANDROID_NDK=${ANDROID_NDK_LATEST_HOME}
+          ./build-android-arm64-v8a.sh
+
+      - name: Put them where the library is assembled
+        shell: bash
+        run: |
+          mkdir -p android/SherpaOnnxAar/sherpa_onnx/src/main/jniLibs/arm64-v8a
+          cp -v build-android-arm64-v8a/install/lib/*.so \
+            android/SherpaOnnxAar/sherpa_onnx/src/main/jniLibs/arm64-v8a/
+
+      - name: Assemble
+        shell: bash
+        run: |
+          cd android/SherpaOnnxAar
+          ./gradlew :sherpa_onnx:assembleRelease
+          cp ./sherpa_onnx/build/outputs/aar/sherpa_onnx-release.aar \
+            ../../sherpa-onnx-keep-to-the-script.aar
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-library
+          path: ./*.aar
+
+  wheel:
+    name: Python wheel
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: keep-to-the-script
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python setup.py bdist_wheel
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-${{ matrix.python-version }}
+          path: dist/*.whl
+
+  release:
+    name: Release what was built
+    needs: [android, wheel]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: built
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: keep-to-the-script-${{ github.sha }}
+          name: keep-to-the-script ${{ github.sha }}
+          body: |
+            Built from `keep-to-the-script`: a NeMo transducer can be told the
+            alphabet the speech is read in, and stays inside it.
+          files: built/**/*
