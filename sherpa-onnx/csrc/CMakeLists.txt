@@ -149,6 +149,7 @@ set(sources
   ten-vad-model.cc
   text-utils.cc
   timer.cc
+  token-script.cc
   transducer-keyword-decoder.cc
   transpose.cc
   unbind.cc
@@ -846,6 +847,7 @@ if(SHERPA_ONNX_ENABLE_TESTS)
     stack-test.cc
     text-utils-test.cc
     text2token-test.cc
+    token-script-test.cc
     transpose-test.cc
     unbind-test.cc
     utfcpp-test.cc

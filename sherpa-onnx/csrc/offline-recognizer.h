@@ -36,6 +36,13 @@ struct OfflineRecognizerConfig {
 
   float blank_penalty = 0.0;
 
+  // The alphabet the speech is read in: "latin", "cyrillic" or "greek". A
+  // multilingual model keeps one vocabulary for every language it knows, so
+  // nothing in it stops a word of one language from coming back in the letters
+  // of another. Naming the alphabet keeps the decoder inside it. Empty, the
+  // default, leaves every token of the vocabulary available.
+  std::string script;
+
   // If there are multiple rules, they are applied from left to right.
   std::string rule_fsts;
 
@@ -54,7 +61,8 @@ struct OfflineRecognizerConfig {
       const std::string &decoding_method, int32_t max_active_paths,
       const std::string &hotwords_file, float hotwords_score,
       float blank_penalty, const std::string &rule_fsts,
-      const std::string &rule_fars, const HomophoneReplacerConfig &hr)
+      const std::string &rule_fars, const HomophoneReplacerConfig &hr,
+      const std::string &script = "")
       : feat_config(feat_config),
         model_config(model_config),
         lm_config(lm_config),
@@ -64,6 +72,7 @@ struct OfflineRecognizerConfig {
         hotwords_file(hotwords_file),
         hotwords_score(hotwords_score),
         blank_penalty(blank_penalty),
+        script(script),
         rule_fsts(rule_fsts),
         rule_fars(rule_fars),
         hr(hr) {}

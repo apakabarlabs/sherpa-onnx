@@ -48,6 +48,13 @@ void OfflineRecognizerConfig::Register(ParseOptions *po) {
                "of higher insertions. "
                "Currently only applicable for transducer models.");
 
+  po->Register("script", &script,
+               "The alphabet the speech is read in: latin, cyrillic or greek. "
+               "A multilingual model can otherwise answer in the letters of "
+               "another language it knows. Empty, the default, leaves every "
+               "token of the vocabulary available. "
+               "Currently only applicable for NeMo transducer models.");
+
   po->Register(
       "hotwords-file", &hotwords_file,
       "The file containing hotwords, one words/phrases per line, For example: "
@@ -144,6 +151,7 @@ std::string OfflineRecognizerConfig::ToString() const {
   os << "hotwords_file=\"" << hotwords_file << "\", ";
   os << "hotwords_score=" << hotwords_score << ", ";
   os << "blank_penalty=" << blank_penalty << ", ";
+  os << "script=\"" << script << "\", ";
   os << "rule_fsts=\"" << rule_fsts << "\", ";
   os << "rule_fars=\"" << rule_fars << "\", ";
   os << "hr=" << hr.ToString() << ")";

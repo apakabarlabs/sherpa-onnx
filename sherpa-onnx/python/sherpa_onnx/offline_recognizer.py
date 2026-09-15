@@ -130,6 +130,7 @@ class OfflineRecognizer(object):
         hr_lexicon: str = "",
         lodr_fst: str = "",
         lodr_scale: float = 0.0,
+        script: str = "",
     ):
         """
         Please refer to
@@ -251,6 +252,7 @@ class OfflineRecognizer(object):
             hotwords_file=hotwords_file,
             hotwords_score=hotwords_score,
             blank_penalty=blank_penalty,
+            script=script,
             rule_fsts=rule_fsts,
             rule_fars=rule_fars,
             hr=HomophoneReplacerConfig(

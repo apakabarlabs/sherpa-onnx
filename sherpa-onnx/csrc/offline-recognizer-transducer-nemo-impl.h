@@ -7,6 +7,7 @@
 
 #include <fstream>
 #include <ios>
+#include <limits>
 #include <memory>
 #include <regex>  // NOLINT
 #include <sstream>
@@ -22,6 +23,7 @@
 #include "sherpa-onnx/csrc/offline-transducer-nemo-model.h"
 #include "sherpa-onnx/csrc/pad-sequence.h"
 #include "sherpa-onnx/csrc/symbol-table.h"
+#include "sherpa-onnx/csrc/token-script.h"
 #include "sherpa-onnx/csrc/transpose.h"
 #include "sherpa-onnx/csrc/utils.h"
 #include "ssentencepiece/csrc/ssentencepiece.h"
@@ -49,7 +51,8 @@ class OfflineRecognizerTransducerNeMoImpl : public OfflineRecognizerImpl {
 
     if (config_.decoding_method == "greedy_search") {
       decoder_ = std::make_unique<OfflineTransducerGreedySearchNeMoDecoder>(
-          model_.get(), config_.blank_penalty, model_->IsTDT());
+          model_.get(), config_.blank_penalty, model_->IsTDT(),
+          OutsideScript());
     } else if (config_.decoding_method == "modified_beam_search") {
       // Initialize BPE encoder if provided
       if (!config_.model_config.bpe_vocab.empty()) {
@@ -88,7 +91,8 @@ class OfflineRecognizerTransducerNeMoImpl : public OfflineRecognizerImpl {
 
     if (config_.decoding_method == "greedy_search") {
       decoder_ = std::make_unique<OfflineTransducerGreedySearchNeMoDecoder>(
-          model_.get(), config_.blank_penalty, model_->IsTDT());
+          model_.get(), config_.blank_penalty, model_->IsTDT(),
+          OutsideScript());
     } else if (config_.decoding_method == "modified_beam_search") {
       // Initialize BPE encoder if provided
       if (!config_.model_config.bpe_vocab.empty()) {
@@ -274,6 +278,35 @@ class OfflineRecognizerTransducerNeMoImpl : public OfflineRecognizerImpl {
                        symbol_table_.NumSymbols(), vocab_size);
       SHERPA_ONNX_EXIT(-1);
     }
+  }
+
+  // One value per token of the vocabulary: 0 for a token written in the
+  // alphabet the speech is read in, -infinity for a token written in another.
+  // Empty when no alphabet was named, which leaves every token available.
+  //
+  // A token in angle brackets, such as <blk> or <unk>, is not a word of any
+  // language and stays available whatever the alphabet.
+  std::vector<float> OutsideScript() const {
+    Script script = ScriptFromName(config_.script);
+    if (script == Script::kAny) return {};
+
+    int32_t vocab_size = model_->VocabSize();
+    std::vector<float> ans(vocab_size, 0.0f);
+    int32_t refused = 0;
+    for (int32_t i = 0; i != vocab_size; ++i) {
+      const std::string &token = symbol_table_[i];
+      if (token.size() > 1 && token.front() == '<' && token.back() == '>') {
+        continue;
+      }
+      if (!TokenBelongsToScript(token, script)) {
+        ans[i] = -std::numeric_limits<float>::infinity();
+        ++refused;
+      }
+    }
+
+    SHERPA_ONNX_LOGE("script %s: %d of %d tokens are written in another",
+                     config_.script.c_str(), refused, vocab_size);
+    return ans;
   }
 
   void InitHotwords() {

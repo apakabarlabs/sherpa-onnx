@@ -37,9 +37,21 @@ static std::pair<Ort::Value, Ort::Value> BuildDecoderInput(
   return {std::move(decoder_input), std::move(decoder_input_length)};
 }
 
+// Adds -infinity to the score of every token written outside the alphabet the
+// speech is read in, so that the best of the alphabet's own tokens is taken.
+static void KeepToTheScript(float *p_logit, int32_t vocab_size,
+                            const std::vector<float> &outside_script) {
+  if (outside_script.empty()) return;
+
+  for (int32_t i = 0; i != vocab_size; ++i) {
+    p_logit[i] += outside_script[i];
+  }
+}
+
 static OfflineTransducerDecoderResult DecodeOne(
     const float *p, int32_t num_rows, int32_t num_cols,
-    OfflineTransducerNeMoModel *model, float blank_penalty) {
+    OfflineTransducerNeMoModel *model, float blank_penalty,
+    const std::vector<float> &outside_script) {
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
 
@@ -71,6 +83,7 @@ static OfflineTransducerDecoderResult DecodeOne(
       if (blank_penalty > 0) {
         p_logit[blank_id] -= blank_penalty;
       }
+      KeepToTheScript(p_logit, vocab_size, outside_script);
 
       auto y = static_cast<int32_t>(std::distance(
           static_cast<const float *>(p_logit),
@@ -103,7 +116,8 @@ static OfflineTransducerDecoderResult DecodeOne(
 
 static OfflineTransducerDecoderResult DecodeOneTDT(
     const float *p, int32_t num_rows, int32_t num_cols,
-    OfflineTransducerNeMoModel *model, float blank_penalty) {
+    OfflineTransducerNeMoModel *model, float blank_penalty,
+    const std::vector<float> &outside_script) {
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
 
@@ -141,6 +155,7 @@ static OfflineTransducerDecoderResult DecodeOneTDT(
     if (blank_penalty > 0) {
       p_logit[blank_id] -= blank_penalty;
     }
+    KeepToTheScript(p_logit, vocab_size, outside_script);
 
     int32_t output_size = shape.back();
     int32_t num_durations = output_size - vocab_size;
@@ -228,9 +243,11 @@ OfflineTransducerGreedySearchNeMoDecoder::Decode(
                            : encoder_out_length.GetTensorData<int64_t>()[i];
 
     if (is_tdt_) {
-      ans[i] = DecodeOneTDT(this_p, this_len, dim2, model_, blank_penalty_);
+      ans[i] = DecodeOneTDT(this_p, this_len, dim2, model_, blank_penalty_,
+                            outside_script_);
     } else {
-      ans[i] = DecodeOne(this_p, this_len, dim2, model_, blank_penalty_);
+      ans[i] = DecodeOne(this_p, this_len, dim2, model_, blank_penalty_,
+                         outside_script_);
     }
   }
 
