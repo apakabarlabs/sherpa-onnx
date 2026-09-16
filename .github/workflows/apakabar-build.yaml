@@ -25,6 +25,12 @@ env:
   # swap in either direction is read as "already satisfied" and never happens.
   LOCAL_VERSION: .post1+keeptothescript
 
+  # Built the shape the published one is built in: the bindings alone, taking the
+  # runtime libraries from `sherpa-onnx-core` rather than carrying copies. Those
+  # copies land on paths that package owns, and removing ours then takes its files
+  # with them, leaving a package that claims to be installed and cannot load.
+  SHERPA_ONNX_SPLIT_PYTHON_PACKAGE: '1'
+
 jobs:
   android:
     name: Android library
