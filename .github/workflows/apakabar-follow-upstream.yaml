@@ -1,9 +1,12 @@
 name: follow upstream
 
 # Ours is a fork with one change of our own on `keep-to-the-script`. This keeps
-# `master` the same as theirs and carries our change onto it every day, so that
-# the day their code moves under ours we hear it from a failed run rather than
-# from a build that will not compile months later.
+# `master` the same as theirs and brings theirs into ours every day, so that the
+# day their code moves under ours we hear it from a failed run rather than from
+# a build that will not compile months later.
+#
+# Theirs is merged into ours rather than ours rebased onto theirs: the branch is
+# one others already read, and rebasing it would rewrite a history they hold.
 
 on:
   schedule:
@@ -28,21 +31,21 @@ jobs:
         run: |
           git remote add upstream https://github.com/k2-fsa/sherpa-onnx.git
           git fetch upstream master
-          git checkout master
+          git checkout -B master origin/master
           git merge --ff-only upstream/master
           git push origin master
 
-      - name: Carry ours onto it
+      - name: Bring theirs into ours
         id: carry
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git checkout keep-to-the-script
-          if git rebase master; then
-            git push --force-with-lease origin keep-to-the-script
+          git checkout -B keep-to-the-script origin/keep-to-the-script
+          if git merge --no-edit master; then
+            git push origin keep-to-the-script
             echo "carried=yes" >> "$GITHUB_OUTPUT"
           else
-            git rebase --abort
+            git merge --abort
             echo "carried=no" >> "$GITHUB_OUTPUT"
           fi
 
@@ -64,6 +67,6 @@ jobs:
               repo: context.repo.repo,
               title,
               labels: ['upstream'],
-              body: 'Rebasing `keep-to-the-script` onto `master` stopped on a conflict. '
+              body: 'Merging `master` into `keep-to-the-script` stopped on a conflict. '
                   + 'Their code moved under ours; carry it across by hand.',
             });
