@@ -40,6 +40,11 @@ def get_package_version():
 
     latest_version += extra_version
 
+    # A build that differs from the published one of the same number needs a number
+    # of its own: pip compares versions and nothing else, so without this a swap in
+    # either direction is read as already satisfied and the file is never replaced.
+    latest_version += os.environ.get("SHERPA_ONNX_LOCAL_VERSION", "")
+
     return latest_version
 
 

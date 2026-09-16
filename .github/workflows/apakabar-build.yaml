@@ -13,6 +13,12 @@ on:
 permissions:
   contents: write
 
+env:
+  # What tells our build apart from the published one of the same number. pip
+  # compares versions and nothing else, so two builds sharing a number means a
+  # swap in either direction is read as "already satisfied" and never happens.
+  LOCAL_VERSION: .post1+keeptothescript
+
 jobs:
   android:
     name: Android library
@@ -56,14 +62,37 @@ jobs:
           name: android-library
           path: ./*.aar
 
-  wheel:
-    name: Python wheel
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ['3.12']
+  # Built inside manylinux rather than on the runner: a wheel takes the C library
+  # of the machine that compiled it, and a runner newer than the server produces
+  # one that will not load there. AlmaLinux 8 carries glibc 2.28, old enough for
+  # everything we run on.
+  wheel-linux:
+    name: Python wheel, Linux
+    runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux_2_28_x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: keep-to-the-script
+
+      - name: Build
+        shell: bash
+        env:
+          SHERPA_ONNX_LOCAL_VERSION: ${{ env.LOCAL_VERSION }}
+        run: |
+          export PATH=/opt/python/cp312-cp312/bin:$PATH
+          python -m pip install --upgrade pip setuptools wheel cmake
+          python setup.py bdist_wheel
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-linux
+          path: dist/*.whl
+
+  wheel-macos:
+    name: Python wheel, macOS
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -72,22 +101,24 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.12'
 
       - name: Build
         shell: bash
+        env:
+          SHERPA_ONNX_LOCAL_VERSION: ${{ env.LOCAL_VERSION }}
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python setup.py bdist_wheel
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheel-${{ matrix.os }}-${{ matrix.python-version }}
+          name: wheel-macos
           path: dist/*.whl
 
   release:
     name: Release what was built
-    needs: [android, wheel]
+    needs: [android, wheel-linux, wheel-macos]
     runs-on: ubuntu-latest
 
     steps:
