@@ -13,6 +13,12 @@ on:
 permissions:
   contents: write
 
+# A run whose result nobody waits for any more is cancelled rather than paid for:
+# the next push to this branch makes the one before it obsolete.
+concurrency:
+  group: apakabar-build
+  cancel-in-progress: true
+
 env:
   # What tells our build apart from the published one of the same number. pip
   # compares versions and nothing else, so two builds sharing a number means a
