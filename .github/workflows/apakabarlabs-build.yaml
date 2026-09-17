@@ -158,8 +158,6 @@ jobs:
             -D CMAKE_BUILD_TYPE=Release \
             -D CMAKE_OSX_ARCHITECTURES=arm64 \
             -D SHERPA_ONNX_ENABLE_JNI=ON \
-            -D SHERPA_ONNX_ENABLE_TTS=OFF \
-            -D SHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION=OFF \
             -D CMAKE_INSTALL_PREFIX=./install \
             ..
           make -j3
