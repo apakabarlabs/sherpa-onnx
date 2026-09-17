@@ -128,9 +128,67 @@ jobs:
           name: wheel-macos
           path: dist/*.whl
 
+  # What a check on a Mac hears with. The app on a phone runs the library above; the
+  # check that says whether a recording comes back word for word runs off the phone,
+  # and until this was built it could only be run against upstream's release, which is
+  # not the code the phone runs.
+  jvm-macos:
+    name: JVM library, macOS
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: keep-to-the-script
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build the native library
+        shell: bash
+        run: |
+          mkdir build
+          cd build
+          cmake \
+            -D BUILD_SHARED_LIBS=ON \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D CMAKE_OSX_ARCHITECTURES=arm64 \
+            -D SHERPA_ONNX_ENABLE_JNI=ON \
+            -D SHERPA_ONNX_ENABLE_TTS=OFF \
+            -D SHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION=OFF \
+            -D CMAKE_INSTALL_PREFIX=./install \
+            ..
+          make -j3
+          make install
+
+      - name: Put the native library where the archive is assembled
+        shell: bash
+        run: |
+          dst=sherpa-onnx/java-api/resources/sherpa-onnx/native/osx-aarch64
+          mkdir -p $dst
+          cp -v build/install/lib/libonnxruntime.dylib $dst/
+          cp -v build/install/lib/libsherpa-onnx-jni.dylib $dst/
+
+      - name: Assemble both archives
+        shell: bash
+        run: |
+          version=$(grep SHERPA_ONNX_VERSION CMakeLists.txt | cut -d ' ' -f 2 | cut -d '"' -f 2)
+          ours=$version${LOCAL_VERSION//+/-}
+          cd sherpa-onnx/java-api
+          mvn package
+          cp -v target/sherpa-onnx-jvm-$version.jar ../../sherpa-onnx-jvm-$ours.jar
+          jar cfv ../../sherpa-onnx-native-lib-osx-aarch64-$ours.jar -C ./resources .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jvm-macos
+          path: ./*.jar
+
   release:
     name: Release what was built
-    needs: [android, wheel-linux, wheel-macos]
+    needs: [android, jvm-macos, wheel-linux, wheel-macos]
     runs-on: ubuntu-latest
 
     steps:
