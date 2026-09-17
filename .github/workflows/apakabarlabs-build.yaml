@@ -1,4 +1,4 @@
-name: apakabar build
+name: apakabarlabs build
 
 # Builds what our own projects install: one Android library and one Python
 # wheel per Python we run, both from `keep-to-the-script`. Every run leaves
@@ -16,7 +16,7 @@ permissions:
 # A run whose result nobody waits for any more is cancelled rather than paid for:
 # the next push to this branch makes the one before it obsolete.
 concurrency:
-  group: apakabar-build
+  group: apakabarlabs-build
   cancel-in-progress: true
 
 env:
