@@ -64,10 +64,12 @@ jobs:
       - name: Assemble
         shell: bash
         run: |
+          version=$(grep SHERPA_ONNX_VERSION CMakeLists.txt | cut -d ' ' -f 2 | cut -d '"' -f 2)
+          ours=$version${LOCAL_VERSION//+/-}
           cd android/SherpaOnnxAar
           ./gradlew :sherpa_onnx:assembleRelease
           cp ./sherpa_onnx/build/outputs/aar/sherpa_onnx-release.aar \
-            ../../sherpa-onnx-keep-to-the-script.aar
+            ../../sherpa-onnx-$ours.aar
 
       - uses: actions/upload-artifact@v4
         with:
