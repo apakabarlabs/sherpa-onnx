@@ -175,6 +175,12 @@ data class OfflineRecognizerConfig(
     var ruleFsts: String = "",
     var ruleFars: String = "",
     var blankPenalty: Float = 0.0f,
+    // The alphabet the speech is read in: "latin", "cyrillic" or "greek". A
+    // multilingual model keeps one vocabulary for every language it knows, so
+    // nothing in it stops a word of one language from coming back in the letters
+    // of another. Naming the alphabet keeps the decoder inside it. Empty, the
+    // default, leaves every token of the vocabulary available.
+    var script: String = "",
 )
 
 class OfflineRecognizer(

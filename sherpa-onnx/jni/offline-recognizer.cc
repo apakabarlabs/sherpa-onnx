@@ -35,6 +35,8 @@ static OfflineRecognizerConfig GetOfflineConfig(JNIEnv *env, jobject config,
 
   SHERPA_ONNX_JNI_READ_FLOAT(ans.blank_penalty, blankPenalty, cls, config);
 
+  SHERPA_ONNX_JNI_READ_STRING(ans.script, script, cls, config);
+
   fid = env->GetFieldID(cls, "featConfig",
                         "Lcom/k2fsa/sherpa/onnx/FeatureConfig;");
   jobject feat_config = env->GetObjectField(config, fid);
