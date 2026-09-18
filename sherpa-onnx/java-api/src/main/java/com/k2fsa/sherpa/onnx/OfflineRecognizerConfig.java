@@ -13,6 +13,7 @@ public class OfflineRecognizerConfig {
     private final String ruleFsts;
     private final String ruleFars;
     private final float blankPenalty;
+    private final String script;
 
     private OfflineRecognizerConfig(Builder builder) {
         this.featConfig = builder.featConfig;
@@ -25,6 +26,7 @@ public class OfflineRecognizerConfig {
         this.ruleFsts = builder.ruleFsts;
         this.ruleFars = builder.ruleFars;
         this.blankPenalty = builder.blankPenalty;
+        this.script = builder.script;
     }
 
     public static Builder builder() {
@@ -46,6 +48,7 @@ public class OfflineRecognizerConfig {
         private String ruleFsts = "";
         private String ruleFars = "";
         private float blankPenalty = 0.0f;
+        private String script = "";
 
         public OfflineRecognizerConfig build() {
             return new OfflineRecognizerConfig(this);
@@ -98,6 +101,18 @@ public class OfflineRecognizerConfig {
 
         public Builder setBlankPenalty(float blankPenalty) {
             this.blankPenalty = blankPenalty;
+            return this;
+        }
+
+        /**
+         * The alphabet the speech is read in: "latin", "cyrillic" or "greek". A
+         * multilingual model keeps one vocabulary for every language it knows, so nothing
+         * in it stops a word of one language from coming back in the letters of another.
+         * Naming the alphabet keeps the decoder inside it. Empty, the default, leaves
+         * every token of the vocabulary available.
+         */
+        public Builder setScript(String script) {
+            this.script = script;
             return this;
         }
     }
