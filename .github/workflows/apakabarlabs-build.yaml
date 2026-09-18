@@ -23,7 +23,12 @@ env:
   # What tells our build apart from the published one of the same number. pip
   # compares versions and nothing else, so two builds sharing a number means a
   # swap in either direction is read as "already satisfied" and never happens.
-  LOCAL_VERSION: .post1+keeptothescript
+  #
+  # The commit is added to this by the `version` job, because the same holds between
+  # two builds of ours: they carry different code, and everything keyed by the version
+  # — an installed package, a table of what a recogniser mishears, a stamp saying an
+  # expensive check has already passed — would hand the new build the old one's answer.
+  OUR_NAME: .post1+keeptothescript
 
   # Built the shape the published one is built in: the bindings alone, taking the
   # runtime libraries from `sherpa-onnx-core` rather than carrying copies. Those
@@ -32,9 +37,23 @@ env:
   SHERPA_ONNX_SPLIT_PYTHON_PACKAGE: '1'
 
 jobs:
+  version:
+    name: What this build is called
+    runs-on: ubuntu-latest
+    outputs:
+      local: ${{ steps.name.outputs.local }}
+
+    steps:
+      - id: name
+        shell: bash
+        run: echo "local=${OUR_NAME}.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
   android:
     name: Android library
     runs-on: ubuntu-latest
+    needs: version
+    env:
+      LOCAL_VERSION: ${{ needs.version.outputs.local }}
 
     steps:
       - uses: actions/checkout@v4
@@ -84,6 +103,9 @@ jobs:
     name: Python wheel, Linux
     runs-on: ubuntu-latest
     container: quay.io/pypa/manylinux_2_28_x86_64
+    needs: version
+    env:
+      LOCAL_VERSION: ${{ needs.version.outputs.local }}
 
     steps:
       - uses: actions/checkout@v4
@@ -107,6 +129,9 @@ jobs:
   wheel-macos:
     name: Python wheel, macOS
     runs-on: macos-latest
+    needs: version
+    env:
+      LOCAL_VERSION: ${{ needs.version.outputs.local }}
 
     steps:
       - uses: actions/checkout@v4
@@ -137,6 +162,9 @@ jobs:
   jvm-macos:
     name: JVM library, macOS
     runs-on: macos-latest
+    needs: version
+    env:
+      LOCAL_VERSION: ${{ needs.version.outputs.local }}
 
     steps:
       - uses: actions/checkout@v4
