@@ -8,6 +8,9 @@ name: apakabarlabs build
 on:
   push:
     branches: [keep-to-the-script]
+    paths-ignore:
+      - '.github/**'
+      - '**.md'
   workflow_dispatch:
 
 permissions:
