@@ -106,6 +106,7 @@ jobs:
         with:
           name: android-library
           path: ./*.aar
+          retention-days: 1
 
   # Built inside manylinux rather than on the runner: a wheel takes the C library
   # of the machine that compiled it, and a runner newer than the server produces
@@ -137,6 +138,7 @@ jobs:
         with:
           name: wheel-linux
           path: dist/*.whl
+          retention-days: 1
 
   wheel-macos:
     name: Python wheel, macOS
@@ -166,6 +168,7 @@ jobs:
         with:
           name: wheel-macos
           path: dist/*.whl
+          retention-days: 1
 
   # What a check on a Mac hears with. The app on a phone runs the library above; the
   # check that says whether a recording comes back word for word runs off the phone,
@@ -225,6 +228,7 @@ jobs:
         with:
           name: jvm-macos
           path: ./*.jar
+          retention-days: 1
 
   release:
     name: Release what was built
