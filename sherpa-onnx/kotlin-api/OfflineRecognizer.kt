@@ -12,6 +12,9 @@ data class OfflineRecognizerResult(
 
     // valid only for TDT models
     val durations: FloatArray,
+
+    // log probability of each token, filled by transducer greedy search
+    val ysLogProbs: FloatArray,
 )
 
 data class OfflineTransducerModelConfig(
