@@ -105,6 +105,10 @@ jobs:
             unzip -Z1 sherpa-onnx-*.aar | grep -qx "jni/$abi/libonnxruntime.so"
           done
 
+      - name: Check the shrinker keeps what the native library reads
+        shell: bash
+        run: unzip -p sherpa-onnx-*.aar proguard.txt | grep -qxF -- '-keep class com.k2fsa.sherpa.onnx.** { *; }'
+
       - uses: actions/upload-artifact@v4
         with:
           name: android-library
