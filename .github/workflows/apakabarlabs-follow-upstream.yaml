@@ -22,10 +22,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # A run's own GITHUB_TOKEN may not push a commit that changes .github/workflows,
+      # and upstream changes theirs; this token may. It expires on 2027-10-15.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.FOLLOW_UPSTREAM_TOKEN }}
 
       - name: Take their master
         run: |

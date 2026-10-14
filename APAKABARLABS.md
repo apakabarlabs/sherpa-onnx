@@ -46,6 +46,15 @@ read in, and its greedy search then takes the best token written in that alphabe
 - `apakabarlabs-follow-upstream.yaml` keeps `master` equal to upstream's and merges it into
   `keep-to-the-script` every day, so that upstream moving under our change shows as a
   failed run. Upstream is merged in, never rebased onto: others read the branch.
+  - It pushes with the secret `FOLLOW_UPSTREAM_TOKEN`, a fine-grained token for this
+    repository only, with Contents and Workflows read and write: a run's own
+    `GITHUB_TOKEN` may not push a commit that changes `.github/workflows`, and upstream
+    changes theirs.
+  - The token expires on **2027-10-15**; the organisation allows no more than 366 days.
+    Before then the owner issues a new one and replaces the secret, or the daily run
+    fails on its first push.
+  - A push with this token starts `apakabarlabs-build.yaml`, so every day upstream moves
+    our branch is built as well.
 
 ## Checks
 
