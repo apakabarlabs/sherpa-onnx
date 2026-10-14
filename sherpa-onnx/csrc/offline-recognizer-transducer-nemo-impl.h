@@ -228,6 +228,20 @@ class OfflineRecognizerTransducerNeMoImpl : public OfflineRecognizerImpl {
 
   OfflineRecognizerConfig GetConfig() const override { return config_; }
 
+  // Only the alphabet can change once the model is loaded: the mask built from
+  // it lives in the greedy decoder, which is rebuilt, while the model and the
+  // feature settings PostInit derived from it stay. A caller must not decode
+  // while this runs.
+  void SetConfig(const OfflineRecognizerConfig &config) override {
+    if (config.script == config_.script) return;
+    config_.script = config.script;
+    if (config_.decoding_method == "greedy_search") {
+      decoder_ = std::make_unique<OfflineTransducerGreedySearchNeMoDecoder>(
+          model_.get(), config_.blank_penalty, model_->IsTDT(),
+          OutsideScript());
+    }
+  }
+
  private:
   void PostInit() {
     int32_t feat_dim = model_->FeatureDim();
