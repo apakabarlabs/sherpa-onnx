@@ -106,22 +106,46 @@ jobs:
             grep -qxF "$VERSION" <<< "$versions"
           }
 
+          # A registry resolves an artifact only when its POM names the coordinates it is
+          # published under; a version whose POM names others is unusable and cannot be
+          # replaced, only deleted.
+          names_itself() {
+            local pom
+            pom="$(curl --silent --show-error --fail -u "$GITHUB_ACTOR:$GITHUB_TOKEN" \
+              "$REGISTRY/fm/apakabar/$1/$VERSION/$1-$VERSION.pom")" || return 1
+            grep -qxF "  <groupId>fm.apakabar</groupId>" <<< "$pom" &&
+              grep -qxF "  <artifactId>$1</artifactId>" <<< "$pom" &&
+              grep -qxF "  <version>$VERSION</version>" <<< "$pom"
+          }
+
+          # mvn deploy:deploy-file takes the POM a jar carries inside it over generating
+          # one, so every artifact is given its own.
           publish() {
             local artifact=$1 packaging=$2 sources=$3
-            if published "$artifact"; then
-              echo "fm.apakabar:$artifact:$VERSION is already published"
-              return
+            if ! published "$artifact"; then
+              cat > "$artifact.pom" <<POM
+          <?xml version="1.0" encoding="UTF-8"?>
+          <project xmlns="http://maven.apache.org/POM/4.0.0">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>fm.apakabar</groupId>
+            <artifactId>$artifact</artifactId>
+            <version>$VERSION</version>
+            <packaging>$packaging</packaging>
+          </project>
+          POM
+              mvn --batch-mode deploy:deploy-file \
+                -DrepositoryId=github \
+                -Durl="$REGISTRY" \
+                -DpomFile="$artifact.pom" \
+                -Dfile="released/$artifact-$VERSION.$packaging" \
+                ${sources:+-Dsources="$sources"}
             fi
-            mvn --batch-mode deploy:deploy-file \
-              -DrepositoryId=github \
-              -Durl="$REGISTRY" \
-              -DgroupId=fm.apakabar \
-              -DartifactId="$artifact" \
-              -Dversion="$VERSION" \
-              -Dpackaging="$packaging" \
-              -Dfile="released/$artifact-$VERSION.$packaging" \
-              ${sources:+-Dsources="$sources"} \
-              -DgeneratePom=true
+            if ! names_itself "$artifact"; then
+              echo "fm.apakabar:$artifact:$VERSION is published with a POM that names other coordinates:" >&2
+              echo "delete that version of the package in the repository's Packages, then run this again" >&2
+              exit 1
+            fi
+            echo "fm.apakabar:$artifact:$VERSION is published"
           }
 
           publish sherpa-onnx aar sherpa-onnx-sources.jar
