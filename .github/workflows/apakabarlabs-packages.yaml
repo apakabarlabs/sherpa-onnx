@@ -1,0 +1,129 @@
+name: apakabarlabs packages
+
+# Puts the Android library and the JVM archives of one release into this repository's
+# GitHub Packages as fm.apakabar:sherpa-onnx, fm.apakabar:sherpa-onnx-jvm and
+# fm.apakabar:sherpa-onnx-native-lib-osx-aarch64, so a library of ours can depend on
+# them: a Gradle library cannot carry a local archive into the package it publishes.
+#
+# It publishes the files the release already holds rather than building them again,
+# so what a project reads from the registry is byte for byte what was checked from the
+# release. Dispatched by hand for the commit a library is about to take: the branch
+# follows upstream every day, and not every build of it is taken.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full commit of keep-to-the-script whose release is published
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: apakabarlabs-packages
+  cancel-in-progress: false
+
+env:
+  COMMIT: ${{ inputs.commit }}
+  REGISTRY: https://maven.pkg.github.com/${{ github.repository }}
+
+jobs:
+  packages:
+    name: Publish to GitHub Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+
+      - name: Take the release's files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "commit must be a full 40-character hash" >&2
+            exit 1
+          fi
+          mkdir released
+          gh release download "keep-to-the-script-$COMMIT" -R "$GITHUB_REPOSITORY" \
+            -p 'sherpa-onnx-*.aar' -p 'sherpa-onnx-jvm-*.jar' -p 'sherpa-onnx-native-lib-osx-aarch64-*.jar' \
+            -D released
+          aar=(released/sherpa-onnx-*.aar)
+          if [[ ${#aar[@]} -ne 1 ]]; then
+            echo "the release holds ${#aar[@]} Android libraries, not one" >&2
+            exit 1
+          fi
+          version="$(basename "${aar[0]}" .aar)"
+          version="${version#sherpa-onnx-}"
+          for file in "sherpa-onnx-jvm-$version.jar" "sherpa-onnx-native-lib-osx-aarch64-$version.jar"; do
+            test -f "released/$file" || { echo "the release has no $file" >&2; exit 1; }
+          done
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      # The Kotlin sources the Android library is compiled from: its source folder
+      # links each file to sherpa-onnx/kotlin-api.
+      - name: Pack the sources
+        shell: bash
+        run: |
+          kotlin="$(mktemp -d)"
+          mkdir -p "$kotlin/com/k2fsa/sherpa/onnx"
+          cp -L android/SherpaOnnxAar/sherpa_onnx/src/main/java/com/k2fsa/sherpa/onnx/*.kt \
+            "$kotlin/com/k2fsa/sherpa/onnx/"
+          jar cf sherpa-onnx-sources.jar -C "$kotlin" .
+          jar cf sherpa-onnx-jvm-sources.jar -C sherpa-onnx/java-api/src/main/java .
+
+      - name: Publish what is not there yet
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          owner="${GITHUB_REPOSITORY%%/*}"
+
+          published() {
+            local versions
+            if ! versions="$(gh api "/orgs/$owner/packages/maven/fm.apakabar.$1/versions" --paginate -q '.[].name' 2>&1)"; then
+              if [[ "$versions" == *"HTTP 404"* ]]; then
+                return 1
+              fi
+              echo "cannot tell whether fm.apakabar:$1 is published: $versions" >&2
+              exit 1
+            fi
+            grep -qxF "$VERSION" <<< "$versions"
+          }
+
+          publish() {
+            local artifact=$1 packaging=$2 sources=$3
+            if published "$artifact"; then
+              echo "fm.apakabar:$artifact:$VERSION is already published"
+              return
+            fi
+            mvn --batch-mode deploy:deploy-file \
+              -DrepositoryId=github \
+              -Durl="$REGISTRY" \
+              -DgroupId=fm.apakabar \
+              -DartifactId="$artifact" \
+              -Dversion="$VERSION" \
+              -Dpackaging="$packaging" \
+              -Dfile="released/$artifact-$VERSION.$packaging" \
+              ${sources:+-Dsources="$sources"} \
+              -DgeneratePom=true
+          }
+
+          publish sherpa-onnx aar sherpa-onnx-sources.jar
+          publish sherpa-onnx-jvm jar sherpa-onnx-jvm-sources.jar
+          publish sherpa-onnx-native-lib-osx-aarch64 jar ""
