@@ -111,7 +111,7 @@ jobs:
           # replaced, only deleted.
           names_itself() {
             local pom
-            pom="$(curl --silent --show-error --fail -u "$GITHUB_ACTOR:$GITHUB_TOKEN" \
+            pom="$(curl --silent --show-error --fail --location -u "$GITHUB_ACTOR:$GITHUB_TOKEN" \
               "$REGISTRY/fm/apakabar/$1/$VERSION/$1-$VERSION.pom")" || return 1
             grep -qxF "  <groupId>fm.apakabar</groupId>" <<< "$pom" &&
               grep -qxF "  <artifactId>$1</artifactId>" <<< "$pom" &&
