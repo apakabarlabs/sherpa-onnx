@@ -68,7 +68,8 @@ class OfflineRecognizerTransducerNeMoImpl : public OfflineRecognizerImpl {
       decoder_ =
           std::make_unique<OfflineTransducerModifiedBeamSearchNeMoDecoder>(
               model_.get(), config_.max_active_paths, unk_id_,
-              config_.blank_penalty, model_->IsTDT(), config_.hotwords_score);
+              config_.blank_penalty, model_->IsTDT(), config_.hotwords_score,
+              OutsideScript());
     } else {
       SHERPA_ONNX_LOGE("Unsupported decoding method: %s",
                        config_.decoding_method.c_str());
@@ -109,7 +110,8 @@ class OfflineRecognizerTransducerNeMoImpl : public OfflineRecognizerImpl {
       decoder_ =
           std::make_unique<OfflineTransducerModifiedBeamSearchNeMoDecoder>(
               model_.get(), config_.max_active_paths, unk_id_,
-              config_.blank_penalty, model_->IsTDT(), config_.hotwords_score);
+              config_.blank_penalty, model_->IsTDT(), config_.hotwords_score,
+              OutsideScript());
     } else {
       SHERPA_ONNX_LOGE("Unsupported decoding method: %s",
                        config_.decoding_method.c_str());
@@ -222,6 +224,14 @@ class OfflineRecognizerTransducerNeMoImpl : public OfflineRecognizerImpl {
       r.text = ApplyInverseTextNormalization(std::move(r.text));
       r.text = ApplyHomophoneReplacer(std::move(r.text));
 
+      for (auto &hyp : r.nbest) {
+        if (!hyp.text.empty() && hyp.text.front() == ' ') {
+          hyp.text.erase(0, 1);
+        }
+        hyp.text = ApplyInverseTextNormalization(std::move(hyp.text));
+        hyp.text = ApplyHomophoneReplacer(std::move(hyp.text));
+      }
+
       ss[i]->SetResult(r);
     }
   }
@@ -229,7 +239,7 @@ class OfflineRecognizerTransducerNeMoImpl : public OfflineRecognizerImpl {
   OfflineRecognizerConfig GetConfig() const override { return config_; }
 
   // Only the alphabet can change once the model is loaded: the mask built from
-  // it lives in the greedy decoder, which is rebuilt, while the model and the
+  // it lives in the decoder, which is rebuilt, while the model and the
   // feature settings PostInit derived from it stay. A caller must not decode
   // while this runs.
   void SetConfig(const OfflineRecognizerConfig &config) override {
@@ -239,6 +249,12 @@ class OfflineRecognizerTransducerNeMoImpl : public OfflineRecognizerImpl {
       decoder_ = std::make_unique<OfflineTransducerGreedySearchNeMoDecoder>(
           model_.get(), config_.blank_penalty, model_->IsTDT(),
           OutsideScript());
+    } else if (config_.decoding_method == "modified_beam_search") {
+      decoder_ =
+          std::make_unique<OfflineTransducerModifiedBeamSearchNeMoDecoder>(
+              model_.get(), config_.max_active_paths, unk_id_,
+              config_.blank_penalty, model_->IsTDT(), config_.hotwords_score,
+              OutsideScript());
     }
   }
 

@@ -77,6 +77,11 @@ static OfflineRecognitionResult Convert(
 
   // Copy token log probabilities (confidence scores)
   r.ys_log_probs = src.ys_log_probs;
+  r.log_prob = src.log_prob;
+  for (const auto &hyp : src.nbest) {
+    r.nbest.push_back(Convert(hyp, sym_table, frame_shift_ms,
+                              subsampling_factor));
+  }
 
   return r;
 }

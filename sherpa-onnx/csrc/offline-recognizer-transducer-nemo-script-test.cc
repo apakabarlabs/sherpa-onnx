@@ -2,13 +2,17 @@
 //
 // Copyright (c)  2026  Apakabarlabs
 
+#include <algorithm>
 #include <cstdlib>
+#include <cmath>
+#include <limits>
 #include <string>
 #include <vector>
 
 #include "gtest/gtest.h"
 #include "sherpa-onnx/csrc/offline-recognizer.h"
 #include "sherpa-onnx/csrc/wave-reader.h"
+#include "sherpa-onnx/csrc/token-script.h"
 
 namespace sherpa_onnx {
 
@@ -122,6 +126,58 @@ TEST_F(NeMoTransducerScript, OnlyTheAlphabetIsTakenFromANewConfig) {
   EXPECT_EQ(now.decoding_method, loaded.decoding_method);
   EXPECT_EQ(now.feat_config.feature_dim, loaded.feat_config.feature_dim);
   EXPECT_EQ(Heard(recognizer), HeardFresh("cyrillic"));
+}
+
+TEST_F(NeMoTransducerScript, RequestedBeamIsSortedAndKeepsTheSameBestResult) {
+  auto config = Config(dir_, "latin");
+  config.decoding_method = "modified_beam_search";
+  config.max_active_paths = 8;
+  OfflineRecognizer recognizer(config);
+  auto plain = recognizer.CreateStream();
+  auto requested = recognizer.CreateStream();
+  requested->SetOption("return_nbest", "1");
+  // A real short recording exercises blank/duration paths and text conversion.
+  const auto n = std::min<size_t>(samples_.size(), rate_);
+  plain->AcceptWaveform(rate_, samples_.data(), n);
+  requested->AcceptWaveform(rate_, samples_.data(), n);
+  recognizer.DecodeStream(plain.get());
+  recognizer.DecodeStream(requested.get());
+  const auto &before = plain->GetResult();
+  const auto &result = requested->GetResult();
+  EXPECT_TRUE(before.nbest.empty());
+  ASSERT_FALSE(result.nbest.empty());
+  EXPECT_LE(result.nbest.size(), 8);
+  EXPECT_EQ(before.text, result.text);
+  EXPECT_EQ(before.tokens, result.tokens);
+  EXPECT_EQ(before.log_prob, result.log_prob);
+  EXPECT_EQ(result.nbest.front().text, result.text);
+  EXPECT_EQ(result.nbest.front().tokens, result.tokens);
+  EXPECT_EQ(result.nbest.front().log_prob, result.log_prob);
+  float previous = std::numeric_limits<float>::infinity();
+  for (const auto &hyp : result.nbest) {
+    EXPECT_TRUE(std::isfinite(hyp.log_prob));
+    EXPECT_LE(hyp.log_prob, previous);
+    previous = hyp.log_prob;
+    EXPECT_TRUE(hyp.nbest.empty());
+    EXPECT_EQ(hyp.tokens.size(), hyp.timestamps.size());
+    for (const auto &token : hyp.tokens) {
+      if (token.size() > 1 && token.front() == '<' && token.back() == '>') continue;
+      EXPECT_TRUE(TokenBelongsToScript(token, Script::kLatin)) << token;
+    }
+  }
+
+  Name(&recognizer, "cyrillic");
+  auto changed = recognizer.CreateStream();
+  changed->SetOption("return_nbest", "1");
+  changed->AcceptWaveform(rate_, samples_.data(), n);
+  recognizer.DecodeStream(changed.get());
+  ASSERT_FALSE(changed->GetResult().nbest.empty());
+  for (const auto &hyp : changed->GetResult().nbest) {
+    for (const auto &token : hyp.tokens) {
+      if (token.size() > 1 && token.front() == '<' && token.back() == '>') continue;
+      EXPECT_TRUE(TokenBelongsToScript(token, Script::kCyrillic)) << token;
+    }
+  }
 }
 
 }  // namespace sherpa_onnx

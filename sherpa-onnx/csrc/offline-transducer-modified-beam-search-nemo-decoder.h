@@ -5,6 +5,7 @@
 #ifndef SHERPA_ONNX_CSRC_OFFLINE_TRANSDUCER_MODIFIED_BEAM_SEARCH_NEMO_DECODER_H_
 #define SHERPA_ONNX_CSRC_OFFLINE_TRANSDUCER_MODIFIED_BEAM_SEARCH_NEMO_DECODER_H_
 
+#include <utility>
 #include <vector>
 
 #include "sherpa-onnx/csrc/offline-transducer-decoder.h"
@@ -18,13 +19,15 @@ class OfflineTransducerModifiedBeamSearchNeMoDecoder
   OfflineTransducerModifiedBeamSearchNeMoDecoder(
       OfflineTransducerNeMoModel *model, int32_t max_active_paths,
       int32_t unk_id, float blank_penalty, bool is_tdt,
-      float hotwords_score = 0.0f)
+      float hotwords_score = 0.0f,
+      std::vector<float> outside_script = {})
       : model_(model),
         max_active_paths_(max_active_paths),
         unk_id_(unk_id),
         blank_penalty_(blank_penalty),
         is_tdt_(is_tdt),
-        hotwords_score_(hotwords_score) {}
+        hotwords_score_(hotwords_score),
+        outside_script_(std::move(outside_script)) {}
 
   std::vector<OfflineTransducerDecoderResult> Decode(
       Ort::Value encoder_out,
@@ -40,6 +43,7 @@ class OfflineTransducerModifiedBeamSearchNeMoDecoder
   float blank_penalty_;
   bool is_tdt_;  // Token-and-Duration Transducer mode
   float hotwords_score_;
+  std::vector<float> outside_script_;
 };
 
 }  // namespace sherpa_onnx

@@ -45,6 +45,11 @@ struct OfflineRecognitionResult {
   /// ys_log_probs[i] contains the log probability (confidence) for tokens[i].
   std::vector<float> ys_log_probs;
 
+  // Final NeMo beam when the stream requests return_nbest=1. Scores are
+  // accumulated decoder log scores, not normalized transcript probabilities.
+  float log_prob = 0;
+  std::vector<OfflineRecognitionResult> nbest;
+
   // Word IDs from FST decoding (CTC models with FST decoder only).
   std::vector<int32_t> words;
 

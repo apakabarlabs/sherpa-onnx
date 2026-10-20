@@ -258,6 +258,12 @@ OfflineTransducerModifiedBeamSearchNeMoDecoder::Decode(
         }
 
         // Compute log softmax for tokens only
+        if (!outside_script_.empty()) {
+          SHERPA_ONNX_CHECK_EQ(outside_script_.size(), token_vocab_size);
+          for (int32_t i = 0; i < token_vocab_size; ++i) {
+            token_logits[i] += outside_script_[i];
+          }
+        }
         LogSoftmax(token_logits, token_vocab_size, 1);
 
         // Apply context boosting BEFORE top-k selection so hotword tokens
@@ -408,6 +414,25 @@ OfflineTransducerModifiedBeamSearchNeMoDecoder::Decode(
       results[b].durations.reserve(best_it->durations.size());
       for (int32_t d : best_it->durations) {
         results[b].durations.push_back(static_cast<float>(d));
+      }
+      results[b].log_prob = best_it->log_prob;
+    }
+
+    // Export only on explicit request, without changing the default result or
+    // merging distinct paths that happen to decode to the same text.
+    if (ss != nullptr && ss[b]->GetOptionInt("return_nbest", 0) != 0) {
+      std::stable_sort(cur_hyps.begin(), cur_hyps.end(),
+                       [](const NeMoHypothesis &a, const NeMoHypothesis &b) {
+                         return a.log_prob > b.log_prob;
+                       });
+      for (const auto &hyp : cur_hyps) {
+        OfflineTransducerDecoderResult entry;
+        entry.tokens.assign(hyp.ys.begin(), hyp.ys.end());
+        entry.timestamps = hyp.timestamps;
+        entry.ys_log_probs = hyp.ys_probs;
+        entry.durations.assign(hyp.durations.begin(), hyp.durations.end());
+        entry.log_prob = hyp.log_prob;
+        results[b].nbest.push_back(std::move(entry));
       }
     }
   }

@@ -24,6 +24,17 @@ read in, and its greedy search then takes the best token written in that alphabe
 - The JNI result carries the log probability of every token (`ysLogProbs`), as the C++,
   Python and C results already did, so an app can report a confidence.
 
+## Inspecting the final NeMo beam
+
+NeMo modified beam search honors the same `script` mask as greedy search. With
+an empty script its token scores are unchanged. A stream may request
+`SetOption("return_nbest", "1")`: the C++ result then carries every final beam
+path in `nbest`, sorted by accumulated `log_prob` after context finalization.
+The score includes blank and TDT duration scores; it is not a normalized
+transcript probability. Duplicate paths/texts are retained. Without the option,
+`nbest` stays empty; the ordinary best result and its JSON format are unchanged.
+The measurement CLI in flowbot (`studio/asr_nbest.cc`) exposes this as JSONL.
+
 ## Packaging
 
 - The Android library ships the ProGuard rule its native code needs: it reads the

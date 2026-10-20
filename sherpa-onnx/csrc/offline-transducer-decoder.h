@@ -27,6 +27,13 @@ struct OfflineTransducerDecoderResult {
 
   /// ys_log_probs[i] contains the log probability (confidence) for tokens[i].
   std::vector<float> ys_log_probs;
+
+  // Accumulated decoder score, including blank and (for TDT) duration scores.
+  float log_prob = 0;
+
+  // Raw final beam, requested with the per-stream option return_nbest=1.
+  // Entries have no nested nbest and are ordered by decreasing log_prob.
+  std::vector<OfflineTransducerDecoderResult> nbest;
 };
 
 class OfflineTransducerDecoder {
