@@ -43,6 +43,10 @@ The measurement CLI in flowbot (`studio/asr_nbest.cc`) exposes this as JSONL.
 - Every build is named after its commit, `<upstream version>.post1+keeptothescript.<commit>`
   (`-keeptothescript.<commit>` where `+` cannot stand), so two builds of the branch never
   answer to one version.
+- Apps and the flowbot server take `1.13.8.post1-keeptothescript.a996e5ca`. Do not move
+  them to `2.0.3.post1-keeptothescript.b96c4fb4`: on Speak Shakespeare's recordings of
+  all 154 sonnets it returned 41 words not as written, against 16 for a996e5ca. A newer
+  build replaces a996e5ca only once that check shows it no worse.
 
 ## Workflows
 
