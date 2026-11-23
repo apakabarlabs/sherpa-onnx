@@ -1,12 +1,18 @@
 name: follow upstream
 
-# Ours is a fork with one change of our own on `keep-to-the-script`. This keeps
-# `master` the same as theirs and brings theirs into ours every day, so that the
-# day their code moves under ours we hear it from a failed run rather than from
-# a build that will not compile months later.
+# Ours is a fork with one change of our own on `keep-to-the-script`. This brings
+# their master into ours every day, so that the day their code moves under ours we
+# hear it from a failed run rather than from a build that will not compile months
+# later.
 #
 # Theirs is merged into ours rather than ours rebased onto theirs: the branch is
 # one others already read, and rebasing it would rewrite a history they hold.
+#
+# Their workflows stay off here. Their push triggers name their branches, so we
+# never push their master into ours; and every workflow file they add arrives
+# enabled, so after each carry every workflow except the apakabarlabs-* ones is
+# disabled again. GitHub switched Actions off for this fork once over the scale
+# of their workflows running here.
 
 on:
   schedule:
@@ -14,6 +20,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
   issues: write
 
@@ -29,21 +36,15 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.FOLLOW_UPSTREAM_TOKEN }}
 
-      - name: Take their master
-        run: |
-          git remote add upstream https://github.com/k2-fsa/sherpa-onnx.git
-          git fetch upstream master
-          git checkout -B master origin/master
-          git merge --ff-only upstream/master
-          git push origin master
-
       - name: Bring theirs into ours
         id: carry
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+          git remote add upstream https://github.com/k2-fsa/sherpa-onnx.git
+          git fetch upstream master
           git checkout -B keep-to-the-script origin/keep-to-the-script
-          if git merge --no-edit master; then
+          if git merge --no-edit upstream/master; then
             git push origin keep-to-the-script
             echo "carried=yes" >> "$GITHUB_OUTPUT"
           else
@@ -51,24 +52,44 @@ jobs:
             echo "carried=no" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Keep their workflows off
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows?per_page=100" \
+            --jq '.workflows[] | select(.state == "active") | select(.path | startswith(".github/workflows/apakabarlabs-") | not) | .id' |
+          while read -r id; do
+            gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$id/disable"
+            echo "disabled workflow $id"
+          done
+
       - name: Say so when it no longer fits
         if: steps.carry.outputs.carried == 'no'
         uses: actions/github-script@v7
         with:
           script: |
-            const title = 'Our change no longer sits on their master';
-            const open = await github.rest.issues.listForRepo({
+            const message = 'Merging their master into keep-to-the-script stopped on a conflict. '
+                + 'Their code moved under ours; carry it across by hand.';
+            const { data: repository } = await github.rest.repos.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'open',
-              labels: 'upstream',
             });
-            if (open.data.some(issue => issue.title === title)) return;
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              labels: ['upstream'],
-              body: 'Merging `master` into `keep-to-the-script` stopped on a conflict. '
-                  + 'Their code moved under ours; carry it across by hand.',
-            });
+            if (repository.has_issues) {
+              const title = 'Our change no longer sits on their master';
+              const open = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: 'upstream',
+              });
+              if (!open.data.some(issue => issue.title === title)) {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title,
+                  labels: ['upstream'],
+                  body: message,
+                });
+              }
+            }
+            core.setFailed(message);

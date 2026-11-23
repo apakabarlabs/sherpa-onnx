@@ -1,8 +1,9 @@
 # What apakabarlabs changes in sherpa-onnx
 
 This is apakabarlabs' fork of [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
-`master` stays the same as upstream's; our changes live on `keep-to-the-script`, and the
-apps and libraries of apakabarlabs take sherpa-onnx from builds of that branch only.
+Our changes live on `keep-to-the-script`, the default branch, and the apps and libraries
+of apakabarlabs take sherpa-onnx from builds of that branch only. This fork's `master` is
+not kept up: pushing upstream's master here would start upstream's workflows.
 
 ## Keeping a NeMo transducer to one alphabet
 
@@ -54,9 +55,15 @@ The measurement CLI in flowbot (`studio/asr_nbest.cc`) exposes this as JSONL.
   `fm.apakabar:sherpa-onnx`, `fm.apakabar:sherpa-onnx-jvm` and
   `fm.apakabar:sherpa-onnx-native-lib-osx-aarch64`, without building them again, and checks
   that each published POM names its own coordinates.
-- `apakabarlabs-follow-upstream.yaml` keeps `master` equal to upstream's and merges it into
-  `keep-to-the-script` every day, so that upstream moving under our change shows as a
-  failed run. Upstream is merged in, never rebased onto: others read the branch.
+- `apakabarlabs-follow-upstream.yaml` merges upstream's master into `keep-to-the-script`
+  every day, so that upstream moving under our change shows as a failed run. Upstream is
+  merged in, never rebased onto: others read the branch.
+  - Only the three `apakabarlabs-*` workflows run here. Upstream's push triggers name their
+    own branches, and every workflow file upstream adds arrives enabled, so after each
+    merge the run disables every other workflow again. GitHub once switched Actions off
+    for this fork over the scale of upstream's workflows, and nothing here ran until the
+    owner switched them back on.
+  - A conflict fails the run; an issue is opened as well when the repository has issues.
   - It pushes with the secret `FOLLOW_UPSTREAM_TOKEN`, a fine-grained token for this
     repository only, with Contents and Workflows read and write: a run's own
     `GITHUB_TOKEN` may not push a commit that changes `.github/workflows`, and upstream
