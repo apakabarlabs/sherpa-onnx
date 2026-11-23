@@ -7,6 +7,7 @@ set(srcs
   display.cc
   endpoint.cc
   features.cc
+  forced-aligner.cc
   homophone-replacer.cc
   keyword-spotter.cc
   offline-canary-model-config.cc
@@ -35,6 +36,7 @@ set(srcs
   offline-speech-denoiser-dpdfnet-model-config.cc
   offline-speech-denoiser-gtcrn-model-config.cc
   offline-speech-denoiser-model-config.cc
+  offline-speech-denoiser-voxlock-model-config.cc
   offline-speech-denoiser.cc
   offline-stream.cc
   offline-tdnn-model-config.cc

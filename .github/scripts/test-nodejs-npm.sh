@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -ex
+set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 echo "dir: $d"
@@ -12,6 +12,160 @@ ls -lh node_modules
 
 echo "---test version---"
 node ./test-version.js
+
+echo "---test forced alignment (english-mfa-v3.1.0)---"
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/fa-models/english-mfa-v3.1.0.tar.bz2
+
+node ./test-forced-alignment-english.js
+grep -q 'name = "phones"' en.TextGrid
+grep -q 'name = "words"' en.TextGrid
+cat en.TextGrid
+
+mkdir -p test-forced-alignment-english
+mv en.TextGrid test-forced-alignment-english/
+cp english-mfa-v3.1.0/en.wav test-forced-alignment-english/
+python3 -m pip install soundfile
+python3 ../../python-api-examples/textgrid-to-word-wavs.py \
+  --wav english-mfa-v3.1.0/en.wav \
+  --textgrid test-forced-alignment-english/en.TextGrid \
+  --out-dir test-forced-alignment-english/word-clips-en
+
+echo "---test forced alignment (zh-aishell3-pinyin)---"
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/fa-models/zh-aishell3-pinyin.tar.bz2
+
+node ./test-forced-alignment-chinese.js
+grep -q 'name = "phones"' zh.TextGrid
+grep -q 'name = "words"' zh.TextGrid
+cat zh.TextGrid
+
+mkdir -p test-forced-alignment-chinese
+mv zh.TextGrid test-forced-alignment-chinese/
+cp zh-aishell3-pinyin/zh.wav test-forced-alignment-chinese/
+python3 ../../python-api-examples/textgrid-to-word-wavs.py \
+  --wav zh-aishell3-pinyin/zh.wav \
+  --textgrid test-forced-alignment-chinese/zh.TextGrid \
+  --out-dir test-forced-alignment-chinese/word-clips-zh
+
+rm -rf english-mfa-v3.1.0 zh-aishell3-pinyin
+
+echo "---test voxlock speech enhancement---"
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/sherpa-onnx-voxlock-int8.tar.bz2
+
+node ./test-offline-speech-enhancement-voxlock.js
+mkdir -p test-offline-speech-enhancement-voxlock
+mv voxlock-enhanced-16k.wav test-offline-speech-enhancement-voxlock/
+cp sherpa-onnx-voxlock-int8/test_wavs/en-combined.wav test-offline-speech-enhancement-voxlock/
+
+node ./test-offline-speech-enhancement-voxlock-with-voice-sample.js
+mkdir -p test-offline-speech-enhancement-voxlock-with-voice-sample
+mv voxlock-enhanced-with-voice-sample-16k.wav test-offline-speech-enhancement-voxlock-with-voice-sample/
+cp sherpa-onnx-voxlock-int8/test_wavs/en-combined.wav sherpa-onnx-voxlock-int8/test_wavs/en-voice-sample-f.wav test-offline-speech-enhancement-voxlock-with-voice-sample/
+
+node ./test-online-speech-enhancement-voxlock.js
+mkdir -p test-online-speech-enhancement-voxlock
+mv voxlock-enhanced-online-16k.wav test-online-speech-enhancement-voxlock/
+cp sherpa-onnx-voxlock-int8/test_wavs/en-combined.wav test-online-speech-enhancement-voxlock/
+
+node ./test-online-speech-enhancement-voxlock-with-voice-sample.js
+mkdir -p test-online-speech-enhancement-voxlock-with-voice-sample
+mv voxlock-enhanced-online-with-voice-sample-16k.wav test-online-speech-enhancement-voxlock-with-voice-sample/
+cp sherpa-onnx-voxlock-int8/test_wavs/en-combined.wav sherpa-onnx-voxlock-int8/test_wavs/en-voice-sample-f.wav test-online-speech-enhancement-voxlock-with-voice-sample/
+
+ls -lh test-offline-speech-enhancement-voxlock test-offline-speech-enhancement-voxlock-with-voice-sample test-online-speech-enhancement-voxlock test-online-speech-enhancement-voxlock-with-voice-sample
+
+rm -rf sherpa-onnx-voxlock-int8
+
+# tts
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kitten-nano-en-v0_1-fp16.tar.bz2
+
+# shared English lexicon for the lexicon-based examples
+if [ ! -f ./lexicon-en-us.txt ]; then
+  download https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/lexicon-en-us.txt
+fi
+
+node ./test-offline-tts-kitten-en-lexicon.js
+node ./test-offline-tts-kitten-en-phonemize.js
+ls -lh *.wav
+rm -rf kitten-nano-en-v0_1-fp16
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2
+
+node ./test-offline-tts-supertonic.js
+ls -lh *.wav
+rm -rf sherpa-onnx-supertonic-3-tts-int8-2026-05-11
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-zipvoice-distill-int8-zh-en-emilia.tar.bz2
+
+download https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos_24khz.onnx
+
+node ./test-offline-tts-zipvoice-zh-en-lexicon.js
+ls -lh *.wav
+rm -rf sherpa-onnx-zipvoice-distill-int8-zh-en-emilia
+rm -f vocos_24khz.onnx
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2
+
+node ./test-offline-tts-kokoro-zh-en-lexicon.js
+ls -lh *.wav
+rm -rf kokoro-multi-lang-v1_0
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2
+
+node ./test-offline-tts-kokoro-en-lexicon.js
+node ./test-offline-tts-kokoro-en-phonemize.js
+rm -rf kokoro-en-v0_19
+
+ls -lh
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/matcha-icefall-zh-baker.tar.bz2
+
+download https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos-22khz-univ.onnx
+
+node ./test-offline-tts-matcha-zh-lexicon.js
+
+rm -rf matcha-icefall-zh-baker
+rm vocos-22khz-univ.onnx
+
+
+echo "---"
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/matcha-icefall-en_US-ljspeech.tar.bz2
+
+download https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos-22khz-univ.onnx
+
+node ./test-offline-tts-matcha-en-lexicon.js
+node ./test-offline-tts-matcha-en-phonemize.js
+
+rm -rf matcha-icefall-en_US-ljspeech
+rm vocos-22khz-univ.onnx
+
+echo "---"
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2
+node ./test-offline-tts-vits-en-lexicon.js
+node ./test-offline-tts-vits-en-phonemize.js
+rm -rf vits-piper-en_US-amy-low*
+
+echo "---"
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-glados-low.tar.bz2
+node ./test-offline-tts-vits-de-phonemize.js
+rm -rf vits-piper-de_DE-glados-low*
+
+echo "---"
+
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-icefall-zh-aishell3.tar.bz2
+node ./test-offline-tts-vits-zh-lexicon.js
+rm -rf vits-icefall-zh-aishell3*
+
+rm -f lexicon-en-us.txt
+
+ls -lh *.wav
+
 
 if false; then
   # disable it for now since it fails, possible due to not using a recent version of onnxruntime
@@ -83,18 +237,6 @@ node ./test-online-t-one-ctc.js
 
 rm -rf sherpa-onnx-streaming-t-one-russian-2025-09-08
 
-download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kitten-nano-en-v0_1-fp16.tar.bz2
-
-node ./test-offline-tts-kitten-en.js
-ls -lh *.wav
-rm -rf kitten-nano-en-v0_1-fp16
-
-download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2
-
-node ./test-offline-tts-supertonic.js
-ls -lh *.wav
-rm -rf sherpa-onnx-supertonic-3-tts-int8-2026-05-11
-
 # online asr
 download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2
 node ./test-online-paraformer.js
@@ -140,6 +282,12 @@ download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/asr
 node ./test-offline-zipformer-ctc.js
 rm -rf sherpa-onnx-zipformer-ctc-zh-int8-2025-07-03
 
+# asr with offline zipformer ctc + HLG graph via ctcFstDecoderConfig
+download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-zipformer-ctc-en-2023-10-02.tar.bz2
+
+node ./test-offline-zipformer-ctc-hlg.js
+rm -rf sherpa-onnx-zipformer-ctc-en-2023-10-02
+
 # asr with offline dolphin ctc
 download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02.tar.bz2
 node ./test-offline-dolphin-ctc.js
@@ -158,65 +306,6 @@ rm gtcrn_simple.onnx
 rm dpdfnet_baseline.onnx
 rm -fv inp_16k.wav
 rm -fv enhanced*.wav
-
-# offline tts
-
-download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-zipvoice-distill-int8-zh-en-emilia.tar.bz2
-
-download https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos_24khz.onnx
-
-node ./test-offline-tts-zipvoice-zh-en.js
-ls -lh *.wav
-rm -rf sherpa-onnx-zipvoice-distill-int8-zh-en-emilia
-rm -f vocos_24khz.onnx
-
-download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2
-
-node ./test-offline-tts-kokoro-zh-en.js
-ls -lh *.wav
-rm -rf kokoro-multi-lang-v1_0
-
-download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2
-
-node ./test-offline-tts-kokoro-en.js
-rm -rf kokoro-en-v0_19
-
-ls -lh
-
-download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/matcha-icefall-zh-baker.tar.bz2
-
-download https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos-22khz-univ.onnx
-
-node ./test-offline-tts-matcha-zh.js
-
-rm -rf matcha-icefall-zh-baker
-rm vocos-22khz-univ.onnx
-
-
-echo "---"
-
-download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/matcha-icefall-en_US-ljspeech.tar.bz2
-
-download https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos-22khz-univ.onnx
-
-node ./test-offline-tts-matcha-en.js
-
-rm -rf matcha-icefall-en_US-ljspeech
-rm vocos-22khz-univ.onnx
-
-echo "---"
-
-download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2
-node ./test-offline-tts-vits-en.js
-rm -rf vits-piper-en_US-amy-low*
-
-echo "---"
-
-download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-icefall-zh-aishell3.tar.bz2
-node ./test-offline-tts-vits-zh.js
-rm -rf vits-icefall-zh-aishell3*
-
-ls -lh *.wav
 
 echo '-----speaker diarization----------'
 download_and_extract https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2

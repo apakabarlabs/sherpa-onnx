@@ -151,6 +151,15 @@ public func sherpaOnnxOnlineCtcFstDecoderConfig(
     max_active: Int32(maxActive))
 }
 
+public func sherpaOnnxOfflineCtcFstDecoderConfig(
+  graph: String = "",
+  maxActive: Int = 3000
+) -> SherpaOnnxOfflineCtcFstDecoderConfig {
+  return SherpaOnnxOfflineCtcFstDecoderConfig(
+    graph: toCPointer(graph),
+    max_active: Int32(maxActive))
+}
+
 public func sherpaOnnxHomophoneReplacerConfig(
   dictDir: String = "",
   lexicon: String = "",
@@ -657,7 +666,8 @@ public func sherpaOnnxOfflineRecognizerConfig(
   ruleFsts: String = "",
   ruleFars: String = "",
   blankPenalty: Float = 0.0,
-  hr: SherpaOnnxHomophoneReplacerConfig = sherpaOnnxHomophoneReplacerConfig()
+  hr: SherpaOnnxHomophoneReplacerConfig = sherpaOnnxHomophoneReplacerConfig(),
+  ctcFstDecoderConfig: SherpaOnnxOfflineCtcFstDecoderConfig = sherpaOnnxOfflineCtcFstDecoderConfig()
 ) -> SherpaOnnxOfflineRecognizerConfig {
   return SherpaOnnxOfflineRecognizerConfig(
     feat_config: featConfig,
@@ -670,7 +680,8 @@ public func sherpaOnnxOfflineRecognizerConfig(
     rule_fsts: toCPointer(ruleFsts),
     rule_fars: toCPointer(ruleFars),
     blank_penalty: blankPenalty,
-    hr: hr
+    hr: hr,
+    ctc_fst_decoder_config: ctcFstDecoderConfig
   )
 }
 
@@ -835,6 +846,21 @@ public class SherpaOnnxOfflineStreamWrapper {
     SherpaOnnxOfflineStreamSetOption(stream, toCPointer(key), toCPointer(value))
   }
 
+  /// Get a string option of this stream. Returns an empty string if the
+  /// option has not been set; use hasOption() to distinguish an unset
+  /// option from an empty value.
+  public func getOption(key: String) -> String {
+    guard let p = SherpaOnnxOfflineStreamGetOption(stream, toCPointer(key)) else {
+      return ""
+    }
+    return String(cString: p)
+  }
+
+  /// Check whether an option has been set on this stream.
+  public func hasOption(key: String) -> Bool {
+    return SherpaOnnxOfflineStreamHasOption(stream, toCPointer(key)) != 0
+  }
+
   public func acceptWaveform(samples: [Float], sampleRate: Int = 16_000) {
     SherpaOnnxAcceptWaveformOffline(stream, Int32(sampleRate), samples, Int32(samples.count))
   }
@@ -917,7 +943,7 @@ public class SherpaOnnxCircularBufferWrapper {
     guard startIndex >= 0 else { return [] }
     guard n > 0 else { return [] }
 
-    guard let ptr = SherpaOnnxCircularBufferGet(buffer, Int32(startIndex), Int32(n)) else {
+    guard let ptr = SherpaOnnxCircularBufferGet(buffer, Int64(startIndex), Int32(n)) else {
       return []
     }
     defer { SherpaOnnxCircularBufferFree(ptr) }
@@ -1019,6 +1045,7 @@ public func sherpaOnnxOfflineTtsVitsModelConfig(
   model: String = "",
   lexicon: String = "",
   tokens: String = "",
+  /// Deprecated. Ignored since v2.0.0. Use lexicon or phonemeCodepoints instead.
   dataDir: String = "",
   noiseScale: Float = 0.667,
   noiseScaleW: Float = 0.8,
@@ -1042,6 +1069,7 @@ public func sherpaOnnxOfflineTtsMatchaModelConfig(
   vocoder: String = "",
   lexicon: String = "",
   tokens: String = "",
+  /// Deprecated. Ignored since v2.0.0. Use lexicon or phonemeCodepoints instead.
   dataDir: String = "",
   noiseScale: Float = 0.667,
   lengthScale: Float = 1.0,
@@ -1063,6 +1091,7 @@ public func sherpaOnnxOfflineTtsKokoroModelConfig(
   model: String = "",
   voices: String = "",
   tokens: String = "",
+  /// Deprecated. Ignored since v2.0.0. Use lexicon or phonemeCodepoints instead.
   dataDir: String = "",
   lengthScale: Float = 1.0,
   dictDir: String = "",
@@ -1085,15 +1114,18 @@ public func sherpaOnnxOfflineTtsKittenModelConfig(
   model: String = "",
   voices: String = "",
   tokens: String = "",
+  /// Deprecated. Ignored since v2.0.0. Use lexicon or phonemeCodepoints instead.
   dataDir: String = "",
-  lengthScale: Float = 1.0
+  lengthScale: Float = 1.0,
+  lexicon: String = ""
 ) -> SherpaOnnxOfflineTtsKittenModelConfig {
   return SherpaOnnxOfflineTtsKittenModelConfig(
     model: toCPointer(model),
     voices: toCPointer(voices),
     tokens: toCPointer(tokens),
     data_dir: toCPointer(dataDir),
-    length_scale: lengthScale
+    length_scale: lengthScale,
+    lexicon: toCPointer(lexicon)
   )
 }
 
@@ -1102,6 +1134,7 @@ public func sherpaOnnxOfflineTtsZipvoiceModelConfig(
   encoder: String = "",
   decoder: String = "",
   vocoder: String = "",
+  /// Deprecated. Ignored since v2.0.0. Use lexicon or phonemeCodepoints instead.
   dataDir: String = "",
   lexicon: String = "",
   featScale: Float = 0.1,
@@ -1244,10 +1277,14 @@ public class SherpaOnnxWaveWrapper {
 }
 
 public class SherpaOnnxGeneratedAudioWrapper {
-  /// A pointer to the underlying counterpart in C
-  public let audio: UnsafePointer<SherpaOnnxGeneratedAudio>!
+  /// A pointer to the underlying counterpart in C.
+  ///
+  /// nil when generation failed — for instance when both `phonemeCodepoints`
+  /// and `tokens` were set, which the C API rejects with a warning. The
+  /// accessors below then report empty audio instead of crashing.
+  public let audio: UnsafePointer<SherpaOnnxGeneratedAudio>?
 
-  public init(audio: UnsafePointer<SherpaOnnxGeneratedAudio>!) {
+  public init(audio: UnsafePointer<SherpaOnnxGeneratedAudio>?) {
     self.audio = audio
   }
 
@@ -1258,22 +1295,22 @@ public class SherpaOnnxGeneratedAudioWrapper {
   }
 
   public var n: Int32 {
-    return audio.pointee.n
+    return audio?.pointee.n ?? 0
   }
 
   public var sampleRate: Int32 {
-    return audio.pointee.sample_rate
+    return audio?.pointee.sample_rate ?? 0
   }
 
   public var samples: [Float] {
-    if let p = audio.pointee.samples {
-      return [Float](UnsafeBufferPointer(start: p, count: Int(n)))
-    } else {
+    guard let audio, let p = audio.pointee.samples else {
       return []
     }
+    return [Float](UnsafeBufferPointer(start: p, count: Int(n)))
   }
 
   public func save(filename: String) -> Int32 {
+    guard let audio else { return -1 }
     return SherpaOnnxWriteWave(audio.pointee.samples, n, sampleRate, toCPointer(filename))
   }
 }
@@ -1301,7 +1338,7 @@ public typealias TtsProgressCallbackWithArg =
   ) -> Int32
 
 public struct SherpaOnnxGenerationConfigSwift {
-  public init(silenceScale: Float = 0.2, speed: Float = 1.0, sid: Int = 0, referenceAudio: [Float] = [], referenceSampleRate: Int = 16000, referenceText: String = "", numSteps: Int = 1, extra: [String: Any] = [:]) {
+  public init(silenceScale: Float = 0.2, speed: Float = 1.0, sid: Int = 0, referenceAudio: [Float] = [], referenceSampleRate: Int = 0, referenceText: String = "", numSteps: Int = 5, extra: [String: Any] = [:], phonemeCodepoints: [[Int32]] = [], tokens: [[String]] = []) {
     self.silenceScale = silenceScale
     self.speed = speed
     self.sid = sid
@@ -1310,16 +1347,27 @@ public struct SherpaOnnxGenerationConfigSwift {
     self.referenceText = referenceText
     self.numSteps = numSteps
     self.extra = extra
+    self.phonemeCodepoints = phonemeCodepoints
+    self.tokens = tokens
   }
 
   public var silenceScale: Float = 0.2
   public var speed: Float = 1.0
   public var sid: Int = 0
   public var referenceAudio: [Float] = []
-  public var referenceSampleRate: Int = 16000
+  public var referenceSampleRate: Int = 0
   public var referenceText: String = ""
-  public var numSteps: Int = 1
+  public var numSteps: Int = 5
   public var extra: [String: Any] = [:]  // Any can be String, Int, Float, Double
+
+  /// Pre-phonemized input as Unicode codepoints. Each inner array is one
+  /// sentence. When set, it is used in place of the text argument; leave
+  /// empty to use text with a lexicon. Mutually exclusive with `tokens`.
+  public var phonemeCodepoints: [[Int32]] = []
+
+  /// Pre-tokenized input, e.g. Chinese pinyin like "zhong1". Each inner array
+  /// is one sentence. Mutually exclusive with `phonemeCodepoints`.
+  public var tokens: [[String]] = []
 
   /// Convert the extra dictionary into a JSON string
   public func extraJsonString() -> String {
@@ -1360,6 +1408,17 @@ final class SherpaOnnxGenerationConfigC {
   /// Extra JSON string for C API
   let extraJson: String
 
+  /// Flattened phoneme codepoints and per-sentence lengths; the pointers in
+  /// cConfig point into these buffers for the duration of the C call.
+  private let codepointsStorage: [Int32]
+  private let codepointsLensStorage: [Int32]
+
+  /// C strings for the flattened token array and the char** array pointing at
+  /// them; freed in deinit.
+  private let tokenStrings: [UnsafeMutablePointer<Int8>?]
+  private let tokenPtrsStorage: UnsafeMutablePointer<UnsafePointer<Int8>?>?
+  private let tokenLensStorage: [Int32]
+
   init(_ swiftConfig: SherpaOnnxGenerationConfigSwift) {
     let referenceAudio = swiftConfig.referenceAudio
 
@@ -1368,19 +1427,76 @@ final class SherpaOnnxGenerationConfigC {
 
     self.referenceAudioStorage = referenceAudio
 
-    self.cConfig = self.referenceAudioStorage.withUnsafeBufferPointer { buffer in
-      SherpaOnnxGenerationConfig(
-        silence_scale: swiftConfig.silenceScale,
-        speed: swiftConfig.speed,
-        sid: Int32(swiftConfig.sid),
-        reference_audio: buffer.count > 0 ? buffer.baseAddress : nil,
-        reference_audio_len: Int32(buffer.count),
-        reference_sample_rate: Int32(swiftConfig.referenceSampleRate),
-        reference_text: toCPointer(swiftConfig.referenceText),
-        num_steps: Int32(swiftConfig.numSteps),
-        extra: toCPointer(extraJson)
-      )
+    // Flatten phoneme codepoints; the C API takes a flat array plus the
+    // length of each sentence.
+    var flatCodepoints: [Int32] = []
+    var codepointLens: [Int32] = []
+    for sentence in swiftConfig.phonemeCodepoints {
+      codepointLens.append(Int32(sentence.count))
+      flatCodepoints.append(contentsOf: sentence)
     }
+    self.codepointsStorage = flatCodepoints
+    self.codepointsLensStorage = codepointLens
+
+    // Flatten tokens the same way; each token becomes a C string and the
+    // char** array points at them.
+    var tokenStrings: [UnsafeMutablePointer<Int8>?] = []
+    var tokenLens: [Int32] = []
+    for sentence in swiftConfig.tokens {
+      tokenLens.append(Int32(sentence.count))
+      for token in sentence {
+        tokenStrings.append(strdup(token))
+      }
+    }
+    self.tokenStrings = tokenStrings
+    self.tokenLensStorage = tokenLens
+
+    var tokenPtrs: UnsafeMutablePointer<UnsafePointer<Int8>?>? = nil
+    if !tokenStrings.isEmpty {
+      tokenPtrs = .allocate(capacity: tokenStrings.count)
+      for (i, p) in tokenStrings.enumerated() {
+        tokenPtrs!.advanced(by: i).initialize(to: UnsafePointer(p))
+      }
+    }
+    self.tokenPtrsStorage = tokenPtrs
+
+    let hasCodepoints = !codepointLens.isEmpty && !flatCodepoints.isEmpty
+    let hasTokens = !tokenLens.isEmpty && !tokenStrings.isEmpty
+
+    self.cConfig = self.referenceAudioStorage.withUnsafeBufferPointer { buffer in
+      flatCodepoints.withUnsafeBufferPointer { codepointsBuf in
+        codepointLens.withUnsafeBufferPointer { codepointsLensBuf in
+          tokenLens.withUnsafeBufferPointer { tokenLensBuf in
+            SherpaOnnxGenerationConfig(
+              silence_scale: swiftConfig.silenceScale,
+              speed: swiftConfig.speed,
+              sid: Int32(swiftConfig.sid),
+              reference_audio: buffer.count > 0 ? buffer.baseAddress : nil,
+              reference_audio_len: Int32(buffer.count),
+              reference_sample_rate: Int32(swiftConfig.referenceSampleRate),
+              reference_text: toCPointer(swiftConfig.referenceText),
+              num_steps: Int32(swiftConfig.numSteps),
+              extra: toCPointer(extraJson),
+              phoneme_codepoints: hasCodepoints ? codepointsBuf.baseAddress : nil,
+              phoneme_codepoints_lens: hasCodepoints ? codepointsLensBuf.baseAddress : nil,
+              phoneme_codepoints_num_sentences: Int32(codepointLens.count),
+              tokens: hasTokens ? UnsafePointer(tokenPtrs!) : nil,
+              tokens_lens: hasTokens ? tokenLensBuf.baseAddress : nil,
+              tokens_num_sentences: Int32(tokenLens.count)
+            )
+          }
+        }
+      }
+    }
+  }
+
+  deinit {
+    for p in tokenStrings {
+      if let p {
+        free(p)
+      }
+    }
+    tokenPtrsStorage?.deallocate()
   }
 }
 
@@ -1399,6 +1515,14 @@ public class SherpaOnnxOfflineTtsWrapper {
   /// The number of speakers supported by the model
   public var numSpeakers: Int32 {
     return SherpaOnnxOfflineTtsNumSpeakers(tts)
+  }
+
+  /// The language/voice of the model, e.g., "en-us". Empty if not available.
+  public var lang: String {
+    guard let p = SherpaOnnxOfflineTtsLang(tts) else { return "" }
+    let ans = String(cString: p)
+    SherpaOnnxDestroyOfflineTtsLang(p)
+    return ans
   }
 
   /// Constructor taking a model config
@@ -1899,6 +2023,21 @@ public class SherpaOnnxOnlineStreamWrapper {
     SherpaOnnxOnlineStreamSetOption(impl, toCPointer(key), toCPointer(value))
   }
 
+  /// Get a string option of this stream. Returns an empty string if the
+  /// option has not been set; use hasOption() to distinguish an unset
+  /// option from an empty value.
+  public func getOption(key: String) -> String {
+    guard let p = SherpaOnnxOnlineStreamGetOption(impl, toCPointer(key)) else {
+      return ""
+    }
+    return String(cString: p)
+  }
+
+  /// Check whether an option has been set on this stream.
+  public func hasOption(key: String) -> Bool {
+    return SherpaOnnxOnlineStreamHasOption(impl, toCPointer(key)) != 0
+  }
+
   public func acceptWaveform(samples: [Float], sampleRate: Int = 16000) {
     SherpaOnnxOnlineStreamAcceptWaveform(impl, Int32(sampleRate), samples, Int32(samples.count))
   }
@@ -1967,11 +2106,43 @@ public func sherpaOnnxOfflineSpeechDenoiserDpdfNetModelConfig(
     attenuation_limit_db: attenuationLimitDb)
 }
 
+/// Return an instance of SherpaOnnxOfflineSpeechDenoiserVoxLockModelConfig.
+///
+/// VoxLock keeps the voice of one speaker (the caller) and removes the other
+/// voices. The model is from https://github.com/arbazsiddiqui/voxlock
+///
+/// - Parameters:
+///   - enrollModel: Path to the VoxLock enroll model, e.g., enroll.onnx. It
+///     runs once on a voice sample of the speaker to keep.
+///   - chunkModel: Path to the VoxLock chunk model, e.g., chunk.onnx or
+///     chunk_int8.onnx. It runs on each chunk of the audio.
+///   - voiceSample: Optional. Path to a wave file with at least 3 seconds of
+///     the caller's voice. VoxLock keeps this voice and removes the others.
+///     From a longer file, it uses the loudest 3 seconds within the first 30
+///     seconds. A file that is shorter or cannot be read is ignored, as if it
+///     were empty. If empty or ignored, the voice sample is taken from the
+///     input audio: the offline denoiser uses the loudest 3 seconds in the
+///     first 15 seconds of the input, and the online denoiser passes the audio
+///     through unchanged until 3 seconds of speech have been heard, then uses
+///     that speech.
+public func sherpaOnnxOfflineSpeechDenoiserVoxLockModelConfig(
+  enrollModel: String = "",
+  chunkModel: String = "",
+  voiceSample: String = ""
+) -> SherpaOnnxOfflineSpeechDenoiserVoxLockModelConfig {
+  return SherpaOnnxOfflineSpeechDenoiserVoxLockModelConfig(
+    enroll_model: toCPointer(enrollModel),
+    chunk_model: toCPointer(chunkModel),
+    voice_sample: toCPointer(voiceSample))
+}
+
 public func sherpaOnnxOfflineSpeechDenoiserModelConfig(
   gtcrn: SherpaOnnxOfflineSpeechDenoiserGtcrnModelConfig =
     sherpaOnnxOfflineSpeechDenoiserGtcrnModelConfig(),
   dpdfnet: SherpaOnnxOfflineSpeechDenoiserDpdfNetModelConfig =
     sherpaOnnxOfflineSpeechDenoiserDpdfNetModelConfig(),
+  voxlock: SherpaOnnxOfflineSpeechDenoiserVoxLockModelConfig =
+    sherpaOnnxOfflineSpeechDenoiserVoxLockModelConfig(),
   numThreads: Int = 1,
   provider: String = "cpu",
   debug: Int = 0
@@ -1981,7 +2152,8 @@ public func sherpaOnnxOfflineSpeechDenoiserModelConfig(
     num_threads: Int32(numThreads),
     debug: Int32(debug),
     provider: toCPointer(provider),
-    dpdfnet: dpdfnet
+    dpdfnet: dpdfnet,
+    voxlock: voxlock
   )
 }
 
@@ -2293,5 +2465,239 @@ public class SourceSeparator {
       SherpaOnnxDestroySourceSeparationOutput(raw)
       return result
     }
+  }
+}
+
+// ============================================================================
+// Forced alignment
+// ============================================================================
+
+/// Alignment options of a forced aligner. A stream can override any of them
+/// before the alignment is computed. A value of 0 lets the C API use its
+/// default for that option.
+public struct ForcedAlignmentOptions {
+  /// Create the options with the documented defaults. Set the properties
+  /// you want to override afterwards.
+  public init() {}
+
+  /// Decoding beam used by the alignment search. Larger is more accurate
+  /// and slower. Default: 10.
+  public var beam: Float = 10
+
+  /// Decoding beam used to retry failed alignments. Default: 40.
+  public var retryBeam: Float = 40
+
+  /// Transition-probability scale relative to the acoustics. Default: 1.
+  public var transitionScale: Float = 1
+
+  /// Scale of self-loop versus non-self-loop log probs relative to the
+  /// acoustics. Default: 0.1.
+  public var selfLoopScale: Float = 0.1
+
+  /// Scaling factor for acoustic likelihoods. Default: 0.1.
+  public var acousticScale: Float = 0.1
+}
+
+/// Configuration of a ForcedAligner.
+public struct ForcedAlignerConfig {
+  /// Create the configuration with the documented defaults. Set the
+  /// properties you want to override afterwards.
+  public init() {}
+
+  /// Directory of one forced-alignment acoustic model. Required files:
+  ///
+  /// - meta.json: feature chain + silence/OOV parameters (parsed once at
+  ///   construction, field by field)
+  /// - final.alimdl: the alignment model (kaldi format: TransitionModel +
+  ///   AmDiagGmm); note it is final.alimdl, NOT final.mdl
+  /// - tree: the context dependency tree (ContextDependency)
+  /// - lda.mat: required iff the feature chain is splice+LDA
+  /// - phones.txt: optional phone table (falls back to the phones list in
+  ///   meta.json when missing)
+  ///
+  /// Other files of the upstream model bundles (final.mdl, phone_lm.fst,
+  /// graphemes.txt, rules.yaml, ...) are unused and ignored; missing
+  /// required files are reported by name.
+  public var modelDir: String = ""
+
+  /// Path to the pronunciation dictionary used to build the lexicon FST.
+  /// One pronunciation per line:
+  ///
+  ///     key [probability columns ...] phone1 phone2 ...
+  ///
+  /// Probability columns (floating point numbers between the key and the
+  /// phones, e.g. MFA .dict files) are ignored. Several lines under one
+  /// key give several pronunciations of the same word/character and ALL
+  /// are kept: each pronunciation becomes a parallel path in the lexicon
+  /// FST and the acoustics pick the one used by the alignment. This is how
+  /// Chinese polyphones avoid text-level guessing.
+  ///
+  /// The key shape depends on the language: English = words, Chinese =
+  /// hanzi characters/phrases (hanzi-keyed), other languages = their
+  /// writing units. Multi-word phrases keep their combined readings: a
+  /// multi-token key writes one " || "-separated phone group per
+  /// word/character ("银行 || i n || h a ŋ"); single-token keys need no
+  /// " || " ("行 x a ŋ"). Words without a pronunciation are reported as
+  /// out-of-vocabulary and aligned as the model's OOV phone.
+  public var lexicon: String = ""
+
+  /// Default alignment options; a stream can override any of them before
+  /// the alignment is computed.
+  public var options = ForcedAlignmentOptions()
+
+  /// true to print debug information: model info while loading the model
+  /// and per-utterance alignment info in compute(). It can also be enabled
+  /// for a single stream via the stream's setOption("debug", "1").
+  public var debug = false
+
+  public func withCConfig<R>(_ body: (UnsafePointer<SherpaOnnxForcedAlignerConfig>) -> R) -> R {
+    var cConfig = SherpaOnnxForcedAlignerConfig()
+    cConfig.debug = self.debug ? 1 : 0
+    cConfig.options.beam = self.options.beam
+    cConfig.options.retry_beam = self.options.retryBeam
+    cConfig.options.transition_scale = self.options.transitionScale
+    cConfig.options.self_loop_scale = self.options.selfLoopScale
+    cConfig.options.acoustic_scale = self.options.acousticScale
+
+    var s: [String: [Int8]] = [:]
+    func b(_ k: String, _ v: String) -> UnsafePointer<Int8>? {
+      s[k] = Array(v.utf8CString)
+      return s[k]!.withUnsafeBufferPointer { $0.baseAddress }
+    }
+
+    cConfig.model_dir = b("model_dir", self.modelDir)
+    cConfig.lexicon = b("lexicon", self.lexicon)
+
+    return body(&cConfig)
+  }
+}
+
+/// One aligned interval: a phone in the "phones" tier or a word in the
+/// "words" tier.
+public struct AlignmentInterval {
+  /// Start time in seconds.
+  public let start: Float
+
+  /// End time in seconds.
+  public let end: Float
+
+  /// The label of this interval: the word for a word interval, the phone
+  /// symbol for a phone interval. It is empty for a silence gap in the
+  /// "words" tier (Praat interval tiers must tile the full time range, so
+  /// the gaps between words are intervals with empty text).
+  public let text: String
+}
+
+/// One tier of the alignment (phones or words).
+public struct AlignmentTier {
+  /// Tier name: "phones" or "words"; never empty.
+  public let name: String
+
+  /// The aligned intervals of this tier, in time order.
+  public let intervals: [AlignmentInterval]
+}
+
+/// Result of ForcedAligner.compute(): the phone and word boundaries of one
+/// utterance, and the same content as a Praat TextGrid.
+public struct ForcedAlignmentResult {
+  /// Duration of the aligned audio in seconds.
+  public let duration: Float
+
+  /// The alignment as a Praat TextGrid string. Save it to a .TextGrid file
+  /// and open it with Praat (https://www.fon.hum.uva.nl/praat/) to
+  /// visualize the phone and word boundaries. Empty for an empty result.
+  public let textGrid: String
+
+  /// The alignment tiers: tiers[0].name == "phones", tiers[1].name ==
+  /// "words". Empty for an empty result.
+  public let tiers: [AlignmentTier]
+
+  /// Build the result from its C counterpart: everything is copied into
+  /// Swift values and the C result is freed before returning, so no
+  /// pointer is kept.
+  init(result: UnsafePointer<SherpaOnnxForcedAlignmentResult>) {
+    self.duration = result.pointee.duration
+
+    if let p = result.pointee.textgrid {
+      self.textGrid = String(cString: p)
+    } else {
+      self.textGrid = ""
+    }
+
+    let n = Int(result.pointee.num_tiers)
+    if n > 0, let p = result.pointee.tiers {
+      self.tiers = (0..<n).map { i in
+        let t = p[i]
+        let name: String = {
+          guard let c = t.name else { return "" }
+          return String(cString: c)
+        }()
+
+        let m = Int(t.num_intervals)
+        var intervals: [AlignmentInterval] = []
+        if m > 0, let q = t.intervals {
+          intervals = (0..<m).map { k in
+            let iv = q[k]
+            let text: String = {
+              guard let c = iv.text else { return "" }
+              return String(cString: c)
+            }()
+            return AlignmentInterval(start: iv.start, end: iv.end, text: text)
+          }
+        }
+
+        return AlignmentTier(name: name, intervals: intervals)
+      }
+    } else {
+      self.tiers = []
+    }
+
+    SherpaOnnxDestroyForcedAlignmentResult(result)
+  }
+}
+
+/// Forced aligner: given a wave and its transcript, it computes the
+/// start/end time of every phone and word.
+public class ForcedAligner {
+  private var ptr: OpaquePointer?
+
+  /// Create a forced aligner from a model directory and a pronunciation
+  /// dictionary. Returns nil on failure, e.g. a missing model file; see
+  /// stderr for the reason.
+  public init?(config: ForcedAlignerConfig) {
+    self.ptr = config.withCConfig { SherpaOnnxCreateForcedAligner($0) }
+
+    if self.ptr == nil { return nil }
+  }
+
+  deinit {
+    if let ptr {
+      SherpaOnnxDestroyForcedAligner(ptr)
+    }
+  }
+
+  /// Create an utterance stream. Fill it with acceptWaveform(), then pass
+  /// it to compute().
+  public func createStream() -> SherpaOnnxOfflineStreamWrapper {
+    guard let ptr = ptr, let stream = SherpaOnnxForcedAlignerCreateStream(ptr) else {
+      fatalError("Failed to create offline stream")
+    }
+
+    return SherpaOnnxOfflineStreamWrapper(stream: stream)
+  }
+
+  /// Compute the alignment of one utterance.
+  ///
+  /// Returns nil when the alignment itself fails. The documented empty
+  /// result (empty text, no features, every word out-of-vocabulary, or
+  /// word boundaries cannot be recovered) comes back as a non-nil result
+  /// with empty `tiers` and empty `textGrid`.
+  public func compute(stream: SherpaOnnxOfflineStreamWrapper, text: String) -> ForcedAlignmentResult? {
+    guard let ptr = ptr,
+          let r = SherpaOnnxForcedAlignerCompute(ptr, stream.stream, toCPointer(text)) else {
+      return nil
+    }
+
+    return ForcedAlignmentResult(result: r)
   }
 }

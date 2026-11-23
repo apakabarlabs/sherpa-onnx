@@ -100,10 +100,16 @@ For concrete Flutter examples, see
 | [audio-tagging](./audio-tagging) | Audio tagging |
 | [keyword-spotter](./keyword-spotter) | Keyword spotting |
 | [add-punctuations](./add-punctuations) | Adding punctuations to text |
+| [forced-alignment-english](./forced-alignment-english) | Forced alignment of an English utterance |
+| [forced-alignment-chinese](./forced-alignment-chinese) | Forced alignment of a Chinese utterance |
 | [speech-enhancement-gtcrn](./speech-enhancement-gtcrn) | Speech enhancement/denoising with GTCRN |
 | [speech-enhancement-dpdfnet](./speech-enhancement-dpdfnet) | Speech enhancement/denoising with DPDFNet (16 kHz family) |
 | [streaming-speech-enhancement-gtcrn](./streaming-speech-enhancement-gtcrn) | Streaming speech enhancement with GTCRN |
 | [streaming-speech-enhancement-dpdfnet](./streaming-speech-enhancement-dpdfnet) | Streaming speech enhancement with DPDFNet |
+| [speech-enhancement-voxlock](./speech-enhancement-voxlock) | Target-speaker voice isolation with VoxLock |
+| [speech-enhancement-voxlock-with-voice-sample](./speech-enhancement-voxlock-with-voice-sample) | Target-speaker voice isolation with VoxLock and a voice sample |
+| [streaming-speech-enhancement-voxlock](./streaming-speech-enhancement-voxlock) | Streaming target-speaker voice isolation with VoxLock |
+| [streaming-speech-enhancement-voxlock-with-voice-sample](./streaming-speech-enhancement-voxlock-with-voice-sample) | Streaming target-speaker voice isolation with VoxLock and a voice sample |
 
 ## Running an example
 
@@ -121,7 +127,7 @@ cd my-example
 
 # Add sherpa_onnx to pubspec.yaml:
 #   dependencies:
-#     sherpa_onnx: ^1.13.8
+#     sherpa_onnx: ^2.0.3
 #     path: ^1.9.0
 
 dart pub get

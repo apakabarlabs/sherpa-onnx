@@ -63,9 +63,13 @@
  * - `audio-tagging-c-api.c` for audio tagging
  * - `add-punctuation-c-api.c` and `add-punctuation-online-c-api.c` for
  *   punctuation
- * - `offline-sepaker-diarization-c-api.c` for diarization
+ * - `offline-speaker-diarization-c-api.c` for diarization
  * - `speech-enhancement-gtcrn-c-api.c` and
  *   `online-speech-enhancement-gtcrn-c-api.c` for speech enhancement
+ * - `speech-enhancement-voxlock-c-api.c` and
+ *   `online-speech-enhancement-voxlock-c-api.c` for target-speaker voice
+ *   isolation with VoxLock; the model is from
+ *   https://github.com/arbazsiddiqui/voxlock
  */
 
 #ifndef SHERPA_ONNX_C_API_C_API_H_
@@ -2040,7 +2044,7 @@ SHERPA_ONNX_API void SherpaOnnxCircularBufferPush(
  * @endcode
  */
 SHERPA_ONNX_API const float *SherpaOnnxCircularBufferGet(
-    const SherpaOnnxCircularBuffer *buffer, int32_t start_index, int32_t n);
+    const SherpaOnnxCircularBuffer *buffer, int64_t start_index, int32_t n);
 
 /** @brief Free an array returned by SherpaOnnxCircularBufferGet(). */
 SHERPA_ONNX_API void SherpaOnnxCircularBufferFree(const float *p);
@@ -2072,7 +2076,7 @@ SherpaOnnxCircularBufferSize(const SherpaOnnxCircularBuffer *buffer);
  * @param buffer A pointer returned by SherpaOnnxCreateCircularBuffer().
  * @return The current head index.
  */
-SHERPA_ONNX_API int32_t
+SHERPA_ONNX_API int64_t
 SherpaOnnxCircularBufferHead(const SherpaOnnxCircularBuffer *buffer);
 
 /**
@@ -2091,8 +2095,13 @@ SHERPA_ONNX_API void SherpaOnnxCircularBufferReset(
  * @see SherpaOnnxVoiceActivityDetectorFront, SherpaOnnxDestroySpeechSegment
  */
 typedef struct SherpaOnnxSpeechSegment {
-  /** Start index, in input samples, of this segment. */
-  int32_t start;
+  /** Start index, in input samples, of this segment.
+   *
+   * It is an absolute position in the input stream and keeps increasing
+   * during the lifetime of a detector, so it is 64-bit. It is -1 if the
+   * segment is not valid.
+   */
+  int64_t start;
   /** Newly allocated mono samples for this segment. */
   float *samples;
   /** Number of samples in @c samples. */
@@ -2218,7 +2227,7 @@ SHERPA_ONNX_API void SherpaOnnxVoiceActivityDetectorClear(
  * while (!SherpaOnnxVoiceActivityDetectorEmpty(vad)) {
  *   const SherpaOnnxSpeechSegment *segment =
  *       SherpaOnnxVoiceActivityDetectorFront(vad);
- *   printf("start=%d, samples=%d\n", segment->start, segment->n);
+ *   printf("start=%lld, samples=%d\n", (long long)segment->start, segment->n);
  *   SherpaOnnxDestroySpeechSegment(segment);
  *   SherpaOnnxVoiceActivityDetectorPop(vad);
  * }
@@ -2268,11 +2277,16 @@ SHERPA_ONNX_API void SherpaOnnxVoiceActivityDetectorFlush(
 typedef struct SherpaOnnxOfflineTtsVitsModelConfig {
   /** Path to the VITS ONNX model, for example `./vits-ljs.onnx`. */
   const char *model;
-  /** Path to the lexicon file. Ignored if @c data_dir is provided. */
+  /** Path to the lexicon file. */
   const char *lexicon;
   /** Path to the tokens file. */
   const char *tokens;
-  /** Optional path to espeak-ng-data. */
+  /**
+   * Path to espeak-ng-data.
+   *
+   * @deprecated Ignored since v2.0.0. Pass pre-phonemized input via
+   * SherpaOnnxGenerationConfig.phoneme_codepoints (or .tokens) instead.
+   */
   const char *data_dir;
   /** VITS noise scale. */
   float noise_scale;
@@ -2294,7 +2308,12 @@ typedef struct SherpaOnnxOfflineTtsMatchaModelConfig {
   const char *lexicon;
   /** Path to the tokens file. */
   const char *tokens;
-  /** Optional path to espeak-ng-data. */
+  /**
+   * Path to espeak-ng-data.
+   *
+   * @deprecated Ignored since v2.0.0. Pass pre-phonemized input via
+   * SherpaOnnxGenerationConfig.phoneme_codepoints (or .tokens) instead.
+   */
   const char *data_dir;
   /** Matcha noise scale. */
   float noise_scale;
@@ -2312,7 +2331,12 @@ typedef struct SherpaOnnxOfflineTtsKokoroModelConfig {
   const char *voices;
   /** Path to the tokens file. */
   const char *tokens;
-  /** Optional path to espeak-ng-data. */
+  /**
+   * Path to espeak-ng-data.
+   *
+   * @deprecated Ignored since v2.0.0. Pass pre-phonemized input via
+   * SherpaOnnxGenerationConfig.phoneme_codepoints (or .tokens) instead.
+   */
   const char *data_dir;
   /** Speech rate scale. Values < 1 are slower; values > 1 are faster. */
   float length_scale;
@@ -2332,10 +2356,17 @@ typedef struct SherpaOnnxOfflineTtsKittenModelConfig {
   const char *voices;
   /** Path to the tokens file. */
   const char *tokens;
-  /** Optional path to espeak-ng-data. */
+  /**
+   * Path to espeak-ng-data.
+   *
+   * @deprecated Ignored since v2.0.0. Pass pre-phonemized input via
+   * SherpaOnnxGenerationConfig.phoneme_codepoints (or .tokens) instead.
+   */
   const char *data_dir;
   /** Speech rate scale. Values < 1 are slower; values > 1 are faster. */
   float length_scale;
+  /** Path to the lexicon file. */
+  const char *lexicon;
 } SherpaOnnxOfflineTtsKittenModelConfig;
 
 /** @brief Configuration for a ZipVoice TTS model. */
@@ -2348,7 +2379,12 @@ typedef struct SherpaOnnxOfflineTtsZipvoiceModelConfig {
   const char *decoder;
   /** Path to the vocoder model. */
   const char *vocoder;
-  /** Optional path to espeak-ng-data. */
+  /**
+   * Path to espeak-ng-data.
+   *
+   * @deprecated Ignored since v2.0.0. Pass pre-phonemized input via
+   * SherpaOnnxGenerationConfig.phoneme_codepoints (or .tokens) instead.
+   */
   const char *data_dir;
   /** Path to the lexicon file. */
   const char *lexicon;
@@ -2450,7 +2486,9 @@ typedef struct SherpaOnnxOfflineTtsModelConfig {
  * config.model.kokoro.model = "./kokoro-en-v0_19/model.onnx";
  * config.model.kokoro.voices = "./kokoro-en-v0_19/voices.bin";
  * config.model.kokoro.tokens = "./kokoro-en-v0_19/tokens.txt";
- * config.model.kokoro.data_dir = "./kokoro-en-v0_19/espeak-ng-data";
+ * // Download it from
+ * // https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/lexicon-en-us.txt
+ * config.model.kokoro.lexicon = "./lexicon-en-us.txt";
  * config.model.num_threads = 2;
  * config.model.provider = "cpu";
  * config.model.debug = 0;
@@ -2540,7 +2578,9 @@ typedef struct SherpaOnnxOfflineTts SherpaOnnxOfflineTts;
  * config.model.kokoro.model = "./kokoro-en-v0_19/model.onnx";
  * config.model.kokoro.voices = "./kokoro-en-v0_19/voices.bin";
  * config.model.kokoro.tokens = "./kokoro-en-v0_19/tokens.txt";
- * config.model.kokoro.data_dir = "./kokoro-en-v0_19/espeak-ng-data";
+ * // Download it from
+ * // https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/lexicon-en-us.txt
+ * config.model.kokoro.lexicon = "./lexicon-en-us.txt";
  * config.model.num_threads = 2;
  *
  * const SherpaOnnxOfflineTts *tts = SherpaOnnxCreateOfflineTts(&config);
@@ -2578,6 +2618,26 @@ SherpaOnnxOfflineTtsSampleRate(const SherpaOnnxOfflineTts *tts);
  */
 SHERPA_ONNX_API int32_t
 SherpaOnnxOfflineTtsNumSpeakers(const SherpaOnnxOfflineTts *tts);
+
+/**
+ * @brief Return the language/voice of the model, e.g., "en-us".
+ *
+ * The returned string is empty if such information is not available. It is
+ * never NULL; free it with SherpaOnnxDestroyOfflineTtsLang().
+ *
+ * @param tts A pointer returned by SherpaOnnxCreateOfflineTts().
+ * @return Language/voice of the model. Free it with
+ *         SherpaOnnxDestroyOfflineTtsLang().
+ */
+SHERPA_ONNX_API const char *
+SherpaOnnxOfflineTtsLang(const SherpaOnnxOfflineTts *tts);
+
+/**
+ * @brief Free a string returned by SherpaOnnxOfflineTtsLang().
+ *
+ * @param s A pointer returned by SherpaOnnxOfflineTtsLang().
+ */
+SHERPA_ONNX_API void SherpaOnnxDestroyOfflineTtsLang(const char *s);
 
 /**
  * @brief Generate speech from text using the simple sid/speed interface.
@@ -2754,6 +2814,44 @@ typedef struct SherpaOnnxGenerationConfig {
   int32_t num_steps;
   /** Optional model-specific JSON string with extra key/value pairs. */
   const char *extra;
+
+  /**
+   * Pre-phonemized input as Unicode codepoints.
+   *
+   * Phonemize the text yourself (for instance with piper_phonemize) and pass
+   * the resulting codepoints here. When set, it is used in place of @c text.
+   * Leave as NULL to use @c text with a lexicon.
+   *
+   * Each sentence is one sub-array. All codepoints of all sentences are stored
+   * flattened in this array; see @c phoneme_codepoints_lens for the boundaries.
+   */
+  const int32_t *phoneme_codepoints;
+
+  /** Number of codepoints in each sentence. It has
+   *  @c phoneme_codepoints_num_sentences entries. If not NULL, every entry
+   *  must be > 0. */
+  const int32_t *phoneme_codepoints_lens;
+
+  /** Number of sentences in @c phoneme_codepoints_lens. */
+  int32_t phoneme_codepoints_num_sentences;
+
+  /**
+   * Pre-tokenized input, e.g. Chinese pinyin like "zhong1".
+   *
+   * Each sentence is one sub-array. All token strings of all sentences are
+   * stored flattened in this array; see @c tokens_lens for the boundaries.
+   *
+   * Mutually exclusive with @c phoneme_codepoints: if both are set, a warning
+   * is printed and generation fails.
+   */
+  const char *const *tokens;
+
+  /** Number of tokens in each sentence. It has @c tokens_num_sentences
+   *  entries. If not NULL, every entry must be > 0. */
+  const int32_t *tokens_lens;
+
+  /** Number of sentences in @c tokens_lens. */
+  int32_t tokens_num_sentences;
 } SherpaOnnxGenerationConfig;
 
 /**
@@ -2854,6 +2952,301 @@ SHERPA_ONNX_API void SherpaOnnxWriteWaveToBuffer(const float *samples,
 SHERPA_ONNX_API int32_t SherpaOnnxWriteWaveMultiChannel(
     const float *const *samples, int32_t n, int32_t sample_rate,
     int32_t num_channels, const char *filename);
+
+/**
+ * @brief Opaque forced aligner object.
+ *
+ * Create it with SherpaOnnxCreateForcedAligner() and destroy it with
+ * SherpaOnnxDestroyForcedAligner().
+ */
+typedef struct SherpaOnnxForcedAligner SherpaOnnxForcedAligner;
+
+/**
+ * @brief Options of a forced aligner. A stream can override any of them via
+ *        its own option mechanism before the alignment is computed.
+ */
+typedef struct SherpaOnnxForcedAlignmentOptions {
+  /**
+   * Decoding beam used by the alignment search. Larger is more accurate
+   * and slower. If set to 0, the default value 10 is used.
+   */
+  float beam;
+
+  /**
+   * Decoding beam used to retry failed alignments. If set to 0, the
+   * default value 40 is used.
+   */
+  float retry_beam;
+
+  /**
+   * Transition-probability scale relative to the acoustics. If set to 0,
+   * the default value 1 is used.
+   */
+  float transition_scale;
+
+  /**
+   * Scale of self-loop versus non-self-loop log probs relative to the
+   * acoustics. If set to 0, the default value 0.1 is used.
+   */
+  float self_loop_scale;
+
+  /**
+   * Scaling factor for acoustic likelihoods. If set to 0, the default
+   * value 0.1 is used.
+   */
+  float acoustic_scale;
+} SherpaOnnxForcedAlignmentOptions;
+
+/**
+ * @brief Configuration of a forced aligner.
+ */
+typedef struct SherpaOnnxForcedAlignerConfig {
+  /**
+   * Directory of one forced-alignment acoustic model. Required files:
+   *
+   *   - meta.json: feature chain + silence/OOV parameters (parsed once at
+   *     construction, field by field)
+   *   - final.alimdl: the alignment model (kaldi format: TransitionModel +
+   *     AmDiagGmm); note it is final.alimdl, NOT final.mdl
+   *   - tree: the context dependency tree (ContextDependency)
+   *   - lda.mat: required iff the feature chain is splice+LDA
+   *   - phones.txt: optional phone table (falls back to the phones list in
+   *     meta.json when missing)
+   *
+   * Other files of the upstream model bundles (final.mdl, phone_lm.fst,
+   * graphemes.txt, rules.yaml, ...) are unused and ignored; missing
+   * required files are reported by name.
+   */
+  const char *model_dir;
+
+  /**
+   * Path to the pronunciation dictionary used to build the lexicon FST.
+   * One pronunciation per line:
+   *
+   *   key [probability columns ...] phone1 phone2 ...
+   *
+   * Probability columns (floating point numbers between the key and the
+   * phones, e.g. MFA .dict files) are ignored. Several lines under one key
+   * give several pronunciations of the same word/character and ALL are
+   * kept: each pronunciation becomes a parallel path in the lexicon FST
+   * and the acoustics pick the one used by the alignment. This is how
+   * Chinese polyphones avoid text-level guessing.
+   *
+   * The key shape depends on the language: English = words, Chinese = hanzi
+   * characters/phrases (hanzi-keyed), other languages = their writing
+   * units. Multi-word phrases keep their combined readings: a multi-token
+   * key writes one " || "-separated phone group per word/character
+   * ("银行 || i n || h a ŋ"); single-token keys need no " || "
+   * ("行 x a ŋ"). Words without a pronunciation are reported as
+   * out-of-vocabulary and aligned as the model's OOV phone.
+   *
+   * Word intervals are recovered along the pronunciation path actually
+   * taken by the alignment; they are not counted with the phone count of
+   * the first pronunciation (pronunciations differ in length).
+   *
+   * The lexicon FST is not shipped with the model; it is built at load
+   * time in kaldi dictionary form (optional silence + word output
+   * symbols).
+   */
+  const char *lexicon;
+
+  /**
+   * Default alignment options; a stream can override any of them before
+   * the alignment is computed.
+   */
+  SherpaOnnxForcedAlignmentOptions options;
+
+  /**
+   * Non-zero to print debug information: model info while loading the
+   * model and per-utterance alignment info in
+   * SherpaOnnxForcedAlignerCompute().
+   */
+  int32_t debug;
+} SherpaOnnxForcedAlignerConfig;
+
+/**
+ * One aligned interval: a phone in the "phones" tier or a word in the
+ * "words" tier.
+ */
+typedef struct SherpaOnnxForcedAlignmentInterval {
+  /**
+   * Start time in seconds.
+   */
+  float start;
+
+  /**
+   * End time in seconds.
+   */
+  float end;
+
+  /**
+   * The text of this interval: the word for a word interval, the phone
+   * symbol for a phone interval. It is empty for a silence gap in the
+   * "words" tier (Praat interval tiers must tile the full time range, so
+   * the gaps between words are reported as intervals with empty text).
+   */
+  const char *text;
+} SherpaOnnxForcedAlignmentInterval;
+
+/**
+ * One tier of the alignment (phones or words).
+ */
+typedef struct SherpaOnnxForcedAlignmentTier {
+  /**
+   * Tier name: "phones" or "words"; it is never empty.
+   */
+  const char *name;
+
+  /**
+   * Number of intervals in this tier.
+   */
+  int32_t num_intervals;
+
+  /**
+   * The aligned intervals of this tier, in time order.
+   */
+  const SherpaOnnxForcedAlignmentInterval *intervals;
+} SherpaOnnxForcedAlignmentTier;
+
+/**
+ * @brief The result of SherpaOnnxForcedAlignerCompute().
+ *
+ * tiers[0].name == "phones", tiers[1].name == "words".
+ */
+typedef struct SherpaOnnxForcedAlignmentResult {
+  /**
+   * Duration of the aligned audio in seconds.
+   */
+  float duration;
+
+  /**
+   * The whole alignment as a Praat TextGrid string; save it to a .TextGrid
+   * file and open it with Praat (https://www.fon.hum.uva.nl/praat/) to
+   * visualize the phone and word boundaries.
+   */
+  const char *textgrid;
+
+  /**
+   * Number of tiers in the result; 0 for an empty result.
+   */
+  int32_t num_tiers;
+
+  /**
+   * The tiers of the alignment ("phones", "words").
+   */
+  const SherpaOnnxForcedAlignmentTier *tiers;
+} SherpaOnnxForcedAlignmentResult;
+
+/**
+ * @brief Create a forced aligner from a model directory and a pronunciation
+ *        dictionary.
+ *
+ * @param config Configuration for forced alignment. The caller is
+ *               responsible for freeing config->model_dir, config->lexicon
+ *               and config itself; they are copied internally.
+ * @return Returns a pointer to the aligner. NULL is returned if the aligner
+ *         could not be created, e.g. a missing model file; see stderr for
+ *         the reason. The caller must free it with
+ *         SherpaOnnxDestroyForcedAligner().
+ *
+ * @code
+ * SherpaOnnxForcedAlignerConfig config;
+ * memset(&config, 0, sizeof(config));
+ * config.model_dir = "./english-mfa-v3.1.0";
+ * config.lexicon = "./english-mfa-v3.1.0/lexicon.txt";
+ *
+ * SherpaOnnxForcedAligner *aligner = SherpaOnnxCreateForcedAligner(&config);
+ * @endcode
+ * @see SherpaOnnxForcedAlignerConfig, SherpaOnnxDestroyForcedAligner
+ */
+SHERPA_ONNX_API SherpaOnnxForcedAligner *SherpaOnnxCreateForcedAligner(
+    const SherpaOnnxForcedAlignerConfig *config);
+
+/**
+ * @brief Free a forced aligner created by SherpaOnnxCreateForcedAligner().
+ *
+ * @param aligner A pointer returned by SherpaOnnxCreateForcedAligner().
+ *
+ * @code
+ * SherpaOnnxDestroyForcedAligner(aligner);
+ * aligner = NULL;
+ * @endcode
+ * @see SherpaOnnxCreateForcedAligner
+ */
+SHERPA_ONNX_API void SherpaOnnxDestroyForcedAligner(
+    const SherpaOnnxForcedAligner *aligner);
+
+/**
+ * @brief Create an utterance stream for a forced aligner.
+ *
+ * Fill the stream with SherpaOnnxAcceptWaveformOffline(), then pass it to
+ * SherpaOnnxForcedAlignerCompute().
+ *
+ * @param aligner A pointer returned by SherpaOnnxCreateForcedAligner().
+ * @return Returns a stream pointer. Free it with
+ *         SherpaOnnxDestroyOfflineStream().
+ *
+ * @code
+ * SherpaOnnxOfflineStream *stream =
+ *     SherpaOnnxForcedAlignerCreateStream(aligner);
+ *
+ * // Optional: per-stream options, e.g. debug output of one utterance.
+ * SherpaOnnxOfflineStreamSetOption(stream, "debug", "1");
+ *
+ * SherpaOnnxAcceptWaveformOffline(stream, wave->sample_rate, wave->samples,
+ *                                 wave->num_samples);
+ * @endcode
+ * @see SherpaOnnxForcedAlignerCompute, SherpaOnnxAcceptWaveformOffline,
+ *      SherpaOnnxDestroyOfflineStream
+ */
+SHERPA_ONNX_API SherpaOnnxOfflineStream *SherpaOnnxForcedAlignerCreateStream(
+    const SherpaOnnxForcedAligner *aligner);
+
+/**
+ * @brief Compute the alignment of one utterance.
+ *
+ * @param aligner A pointer returned by SherpaOnnxCreateForcedAligner().
+ * @param stream  A stream returned by
+ *                SherpaOnnxForcedAlignerCreateStream() and filled with a
+ *                waveform.
+ * @param text    The transcript of the whole utterance. Hanzi text is
+ *                tokenized per character (multi-character dictionary keys
+ *                give pronunciation context); anything else is split on
+ *                whitespace. Punctuation is ignored.
+ * @return Returns the alignment result. The caller must free it with
+ *         SherpaOnnxDestroyForcedAlignmentResult(). An empty result (no
+ *         tiers, empty textgrid) with a warning on stderr is returned when
+ *         the text is empty, the stream has no features, every word is
+ *         out-of-vocabulary, or word boundaries cannot be recovered. NULL
+ *         is returned if any argument is NULL or if the alignment itself
+ *         fails.
+ *
+ * @code
+ * const SherpaOnnxForcedAlignmentResult *result =
+ *     SherpaOnnxForcedAlignerCompute(aligner, stream, text);
+ * printf("%s\n", result->textgrid);
+ * @endcode
+ * @see SherpaOnnxForcedAlignerCreateStream, SherpaOnnxForcedAlignmentResult,
+ *      SherpaOnnxDestroyForcedAlignmentResult
+ */
+SHERPA_ONNX_API const SherpaOnnxForcedAlignmentResult *
+SherpaOnnxForcedAlignerCompute(const SherpaOnnxForcedAligner *aligner,
+                               const SherpaOnnxOfflineStream *stream,
+                               const char *text);
+
+/**
+ * @brief Free the result of SherpaOnnxForcedAlignerCompute().
+ *
+ * @param result A pointer returned by SherpaOnnxForcedAlignerCompute().
+ *
+ * @code
+ * SherpaOnnxDestroyForcedAlignmentResult(result);
+ * result = NULL;
+ * @endcode
+ * @see SherpaOnnxForcedAlignerCompute
+ */
+SHERPA_ONNX_API void SherpaOnnxDestroyForcedAlignmentResult(
+    const SherpaOnnxForcedAlignmentResult *result);
 
 /**
  * @brief Decoded mono WAVE file content.
@@ -3926,7 +4319,7 @@ typedef struct SherpaOnnxFastClusteringConfig {
 /**
  * @brief Configuration for offline speaker diarization.
  *
- * Example based on `offline-sepaker-diarization-c-api.c`:
+ * Example based on `offline-speaker-diarization-c-api.c`:
  *
  * @code
  * SherpaOnnxOfflineSpeakerDiarizationConfig config;
@@ -4169,6 +4562,44 @@ typedef struct SherpaOnnxOfflineSpeechDenoiserDpdfNetModelConfig {
 } SherpaOnnxOfflineSpeechDenoiserDpdfNetModelConfig;
 
 /**
+ * @brief VoxLock target-speaker voice isolation model configuration.
+ *
+ * VoxLock keeps the voice of one speaker (the caller) and removes other
+ * voices. The model is from https://github.com/arbazsiddiqui/voxlock
+ */
+typedef struct SherpaOnnxOfflineSpeechDenoiserVoxLockModelConfig {
+  /**
+   * Path to the VoxLock enroll model, e.g., `enroll.onnx`.
+   *
+   * It runs once on a voice sample of the speaker to keep. Download the
+   * models from
+   * https://github.com/arbazsiddiqui/voxlock/releases/tag/sherpa-onnx-models
+   */
+  const char *enroll_model;
+  /**
+   * Path to the VoxLock chunk model, e.g., `chunk.onnx` or
+   * `chunk_int8.onnx`.
+   *
+   * It runs on each chunk of the audio.
+   */
+  const char *chunk_model;
+  /**
+   * Optional. Path to a wave file with at least 3 seconds of the caller's
+   * voice. VoxLock keeps this voice and removes the others. From a longer
+   * file, it uses the loudest 3 seconds within the first 30 seconds. A file
+   * that is shorter or cannot be read is ignored, as if it were empty.
+   *
+   * If empty or ignored, the voice sample is taken from the input audio:
+   *
+   * - Offline denoiser: the loudest 3 seconds in the first 15 seconds of
+   *   the input are used.
+   * - Online denoiser: the audio is passed through unchanged until 3 seconds
+   *   of speech have been heard; that speech is used as the voice sample.
+   */
+  const char *voice_sample;
+} SherpaOnnxOfflineSpeechDenoiserVoxLockModelConfig;
+
+/**
  * @brief Speech denoiser model configuration shared by offline and online APIs.
  *
  * Configure exactly one model family. If multiple model families are provided,
@@ -4185,6 +4616,8 @@ typedef struct SherpaOnnxOfflineSpeechDenoiserModelConfig {
   const char *provider;
   /** DPDFNet model configuration. */
   SherpaOnnxOfflineSpeechDenoiserDpdfNetModelConfig dpdfnet;
+  /** VoxLock model configuration. */
+  SherpaOnnxOfflineSpeechDenoiserVoxLockModelConfig voxlock;
 } SherpaOnnxOfflineSpeechDenoiserModelConfig;
 
 /** @brief Configuration for offline speech denoising. */
@@ -4233,6 +4666,23 @@ SHERPA_ONNX_API void SherpaOnnxDestroyOfflineSpeechDenoiser(
  */
 SHERPA_ONNX_API int32_t SherpaOnnxOfflineSpeechDenoiserGetSampleRate(
     const SherpaOnnxOfflineSpeechDenoiser *sd);
+
+/**
+ * @brief Set a PCM voice sample for VoxLock.
+ *
+ * After resampling to the model rate, it keeps the loudest 3 seconds
+ * within the first 30 seconds. Returns -1 if the clip is shorter than
+ * 3 seconds after resampling; the previous voice sample is left unchanged.
+ *
+ * @param sd A pointer returned by SherpaOnnxCreateOfflineSpeechDenoiser().
+ * @param samples Input mono PCM samples normalized to [-1, 1].
+ * @param n Number of input samples.
+ * @param sample_rate Input sample rate in Hz.
+ * @return 0 on success, -1 on error.
+ */
+SHERPA_ONNX_API int32_t SherpaOnnxOfflineSpeechDenoiserSetVoiceSample(
+    const SherpaOnnxOfflineSpeechDenoiser *sd, const float *samples, int32_t n,
+    int32_t sample_rate);
 
 /**
  * @brief Denoised audio returned by offline or online speech enhancement APIs.
@@ -4373,6 +4823,22 @@ SherpaOnnxOnlineSpeechDenoiserFlush(const SherpaOnnxOnlineSpeechDenoiser *sd);
 SHERPA_ONNX_API void SherpaOnnxOnlineSpeechDenoiserReset(
     const SherpaOnnxOnlineSpeechDenoiser *sd);
 
+/**
+ * @brief Set a PCM voice sample for VoxLock.
+ *
+ * See SherpaOnnxOfflineSpeechDenoiserSetVoiceSample(). On success the
+ * denoiser is reset so it uses the new clip.
+ *
+ * @param sd A pointer returned by SherpaOnnxCreateOnlineSpeechDenoiser().
+ * @param samples Input mono PCM samples normalized to [-1, 1].
+ * @param n Number of input samples.
+ * @param sample_rate Input sample rate in Hz.
+ * @return 0 on success, -1 on error.
+ */
+SHERPA_ONNX_API int32_t SherpaOnnxOnlineSpeechDenoiserSetVoiceSample(
+    const SherpaOnnxOnlineSpeechDenoiser *sd, const float *samples, int32_t n,
+    int32_t sample_rate);
+
 // =========================================================================
 // Source separation
 // =========================================================================
@@ -4492,9 +4958,80 @@ SherpaOnnxOfflineSourceSeparationProcess(
     int32_t num_channels, int32_t num_samples, int32_t sample_rate);
 
 /**
+ * @brief Progress callback for offline source separation.
+ *
+ * The current implementation reports progress but ignores the callback's
+ * return value.
+ */
+typedef int32_t (*SherpaOnnxOfflineSourceSeparationProgressCallback)(
+    int32_t num_processed_chunks, int32_t num_total_chunks, void *arg);
+
+/**
+ * @brief Same as SherpaOnnxOfflineSourceSeparationProgressCallback but
+ * without a user pointer.
+ */
+typedef int32_t (*SherpaOnnxOfflineSourceSeparationProgressCallbackNoArg)(
+    int32_t num_processed_chunks, int32_t num_total_chunks);
+
+/**
+ * @brief Run source separation on multi-channel audio with a progress
+ * callback.
+ *
+ * All input channels must have the same number of samples.
+ *
+ * @param ss            A pointer returned by
+ *                      SherpaOnnxCreateOfflineSourceSeparation().
+ * @param samples       samples[c] is a float array for channel c, values in
+ *                      [-1, 1].
+ * @param num_channels  Number of input channels.
+ * @param num_samples   Number of samples per channel (all channels must have
+ *                      the same length).
+ * @param sample_rate   Input sample rate in Hz.
+ * @param callback      Progress callback.
+ * @param arg           User pointer forwarded to @p callback.
+ * @return A newly allocated output on success, or NULL on error. Free it
+ *         with SherpaOnnxDestroySourceSeparationOutput().
+ *
+ * @code
+ * static int32_t ProgressCallback(int32_t done, int32_t total, void *arg) {
+ *   fprintf(stderr, "progress %.2f%%\n", 100.0f * done / total);
+ *   return 0;
+ * }
+ * @endcode
+ */
+SHERPA_ONNX_API const SherpaOnnxSourceSeparationOutput *
+SherpaOnnxOfflineSourceSeparationProcessWithCallback(
+    const SherpaOnnxOfflineSourceSeparation *ss, const float *const *samples,
+    int32_t num_channels, int32_t num_samples, int32_t sample_rate,
+    SherpaOnnxOfflineSourceSeparationProgressCallback callback, void *arg);
+
+/**
+ * @brief Run source separation on multi-channel audio with a progress
+ * callback that has no user pointer.
+ *
+ * @param ss            A pointer returned by
+ *                      SherpaOnnxCreateOfflineSourceSeparation().
+ * @param samples       samples[c] is a float array for channel c, values in
+ *                      [-1, 1].
+ * @param num_channels  Number of input channels.
+ * @param num_samples   Number of samples per channel (all channels must have
+ *                      the same length).
+ * @param sample_rate   Input sample rate in Hz.
+ * @param callback      Progress callback.
+ * @return A newly allocated output on success, or NULL on error. Free it
+ *         with SherpaOnnxDestroySourceSeparationOutput().
+ */
+SHERPA_ONNX_API const SherpaOnnxSourceSeparationOutput *
+SherpaOnnxOfflineSourceSeparationProcessWithCallbackNoArg(
+    const SherpaOnnxOfflineSourceSeparation *ss, const float *const *samples,
+    int32_t num_channels, int32_t num_samples, int32_t sample_rate,
+    SherpaOnnxOfflineSourceSeparationProgressCallbackNoArg callback);
+
+/**
  * @brief Destroy the output of a source-separation run.
  *
- * @param p A pointer returned by SherpaOnnxOfflineSourceSeparationProcess().
+ * @param p A pointer returned by one of the
+ *          SherpaOnnxOfflineSourceSeparationProcess*() functions.
  */
 SHERPA_ONNX_API void SherpaOnnxDestroySourceSeparationOutput(
     const SherpaOnnxSourceSeparationOutput *p);
@@ -4688,6 +5225,21 @@ SHERPA_ONNX_API const SherpaOnnxOfflineSourceSeparation *
 SherpaOnnxCreateOfflineSourceSeparationOHOS(
     const SherpaOnnxOfflineSourceSeparationConfig *config,
     NativeResourceManager *mgr);
+
+/**
+ * @brief Create a forced aligner on HarmonyOS.
+ *
+ * This is the HarmonyOS counterpart of SherpaOnnxCreateForcedAligner().
+ * The model_dir and lexicon fields of the config are paths relative to the
+ * resource root.
+ *
+ * @param config Forced aligner configuration.
+ * @param mgr HarmonyOS resource manager used to resolve bundled assets.
+ * @return A newly allocated aligner, or NULL on error. Free it with
+ *         SherpaOnnxDestroyForcedAligner().
+ */
+SHERPA_ONNX_API SherpaOnnxForcedAligner *SherpaOnnxCreateForcedAlignerOHOS(
+    const SherpaOnnxForcedAlignerConfig *config, NativeResourceManager *mgr);
 #endif
 
 // ============================================================

@@ -2,7 +2,7 @@ name: sherpa_onnx_web
 description: >
   Web platform support for sherpa_onnx using WebAssembly.
 
-version: 1.13.8
+version: 2.0.3
 
 repository: https://github.com/k2-fsa/sherpa-onnx/tree/master/flutter
 
@@ -48,4 +48,6 @@ flutter:
     - path: assets/sherpa-onnx-speaker-diarization.js
       platforms: [web]
     - path: assets/sherpa-onnx-speech-enhancement.js
+      platforms: [web]
+    - path: assets/sherpa-onnx-forced-aligner.js
       platforms: [web]

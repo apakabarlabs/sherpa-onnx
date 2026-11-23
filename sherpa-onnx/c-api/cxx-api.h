@@ -849,6 +849,238 @@ class SHERPA_ONNX_API OfflineRecognizer
 };
 
 // ============================================================================
+// Forced alignment
+// ============================================================================
+
+/**
+ * @brief Options of a forced aligner.
+ */
+struct ForcedAlignmentOptions {
+  /**
+   * Decoding beam used by the alignment search. Larger is more accurate
+   * and slower. If set to 0, the default value 10 is used.
+   */
+  float beam = 10.0f;
+
+  /**
+   * Decoding beam used to retry failed alignments. If set to 0, the
+   * default value 40 is used.
+   */
+  float retry_beam = 40.0f;
+
+  /**
+   * Transition-probability scale relative to the acoustics. If set to 0,
+   * the default value 1 is used.
+   */
+  float transition_scale = 1.0f;
+
+  /**
+   * Scale of self-loop versus non-self-loop log probs relative to the
+   * acoustics. If set to 0, the default value 0.1 is used.
+   */
+  float self_loop_scale = 0.1f;
+
+  /**
+   * Scaling factor for acoustic likelihoods. If set to 0, the default
+   * value 0.1 is used.
+   */
+  float acoustic_scale = 0.1f;
+};
+
+/**
+ * @brief Configuration of a forced aligner.
+ */
+struct ForcedAlignerConfig {
+  /**
+   * Directory of one forced-alignment acoustic model. Required files:
+   *
+   *   - meta.json: feature chain + silence/OOV parameters (parsed once at
+   *     construction, field by field)
+   *   - final.alimdl: the alignment model (kaldi format: TransitionModel +
+   *     AmDiagGmm); note it is final.alimdl, NOT final.mdl
+   *   - tree: the context dependency tree (ContextDependency)
+   *   - lda.mat: required iff the feature chain is splice+LDA
+   *   - phones.txt: optional phone table (falls back to the phones list in
+   *     meta.json when missing)
+   *
+   * Other files of the upstream model bundles (final.mdl, phone_lm.fst,
+   * graphemes.txt, rules.yaml, ...) are unused and ignored; missing
+   * required files are reported by name.
+   */
+  std::string model_dir;
+
+  /**
+   * Path to the pronunciation dictionary used to build the lexicon FST.
+   * One pronunciation per line:
+   *
+   *     key [probability columns ...] phone1 phone2 ...
+   *
+   * Probability columns (floating point numbers between the key and the
+   * phones, e.g. MFA .dict files) are ignored. Several lines under one key
+   * give several pronunciations of the same word/character and ALL are
+   * kept: each pronunciation becomes a parallel path in the lexicon FST
+   * and the acoustics pick the one used by the alignment. This is how
+   * Chinese polyphones avoid text-level guessing.
+   *
+   * The key shape depends on the language: English = words, Chinese = hanzi
+   * characters/phrases (hanzi-keyed), other languages = their writing
+   * units. Multi-word phrases keep their combined readings: a multi-token
+   * key writes one " || "-separated phone group per word/character
+   * ("银行 || i n || h a ŋ"); single-token keys need no " || "
+   * ("行 x a ŋ"). Words without a pronunciation are reported as
+   * out-of-vocabulary and aligned as the model's OOV phone.
+   *
+   * Word intervals are recovered along the pronunciation path actually
+   * taken by the alignment; they are not counted with the phone count of
+   * the first pronunciation (pronunciations differ in length).
+   *
+   * The lexicon FST is not shipped with the model; it is built at load
+   * time in kaldi dictionary form (optional silence + word output
+   * symbols).
+   */
+  std::string lexicon;
+
+  /**
+   * Default alignment options; a stream can override any of them before
+   * the alignment is computed.
+   */
+  ForcedAlignmentOptions options;
+
+  /**
+   * true to print debug information: model info while loading the model
+   * and per-utterance alignment info in Compute().
+   */
+  bool debug = false;
+};
+
+/**
+ * @brief One aligned interval: a phone in the "phones" tier or a word in
+ *  the "words" tier.
+ */
+struct ForcedAlignmentInterval {
+  /**
+   * Start time in seconds.
+   */
+  float start = 0.0f;
+
+  /**
+   * End time in seconds.
+   */
+  float end = 0.0f;
+
+  /**
+   * The text of this interval: the word for a word interval, the phone
+   * symbol for a phone interval. It is empty for a silence gap in the
+   * "words" tier (Praat interval tiers must tile the full time range, so
+   * the gaps between words are reported as intervals with empty text).
+   */
+  std::string text;
+};
+
+/**
+ * @brief One tier of the alignment (phones or words).
+ */
+struct ForcedAlignmentTier {
+  /**
+   * Tier name: "phones" or "words"; it is never empty.
+   */
+  std::string name;
+
+  /**
+   * The aligned intervals of this tier, in time order.
+   */
+  std::vector<ForcedAlignmentInterval> intervals;
+};
+
+/**
+ * @brief The result of ForcedAligner::Compute().
+ *
+ * tiers[0].name == "phones", tiers[1].name == "words".
+ */
+struct ForcedAlignmentResult {
+  /**
+   * Duration of the aligned audio in seconds.
+   */
+  float duration = 0.0f;
+
+  /**
+   * The whole alignment as a Praat TextGrid string; save it to a .TextGrid
+   * file and open it with Praat (https://www.fon.hum.uva.nl/praat/) to
+   * visualize the phone and word boundaries.
+   */
+  std::string textgrid;
+
+  /**
+   * The tiers of the alignment ("phones", "words"); empty for an empty
+   * result.
+   */
+  std::vector<ForcedAlignmentTier> tiers;
+};
+
+/**
+ * @brief RAII wrapper for a forced aligner.
+ *
+ * Given a wave and its transcript, it computes the start/end time of every
+ * phone and word:
+ *
+ * @code
+ * ForcedAlignerConfig config;
+ * config.model_dir = "./english-mfa-v3.1.0";
+ * config.lexicon = "./english-mfa-v3.1.0/lexicon.txt";
+ *
+ * ForcedAligner aligner = ForcedAligner::Create(config);
+ * OfflineStream stream = aligner.CreateStream();
+ *
+ * // Optional: per-stream options, e.g. debug output of one utterance.
+ * stream.SetOption("debug", "1");
+ *
+ * stream.AcceptWaveform(wave.sample_rate, wave.samples.data(),
+ *                       static_cast<int32_t>(wave.samples.size()));
+ * ForcedAlignmentResult result = aligner.Compute(stream, text);
+ * @endcode
+ */
+class SHERPA_ONNX_API ForcedAligner
+    : public MoveOnly<ForcedAligner, SherpaOnnxForcedAligner> {
+ public:
+  /**
+   * @brief Create a forced aligner from a model directory and a
+   *         pronunciation dictionary.
+   */
+  static ForcedAligner Create(const ForcedAlignerConfig &config);
+
+  /**
+   * @brief Destroy the wrapped C handle.
+   */
+  void Destroy(const SherpaOnnxForcedAligner *p) const;
+
+  /**
+   * @brief Create an utterance stream.
+   *
+   * Fill it with OfflineStream::AcceptWaveform(), then pass it to Compute().
+   */
+  OfflineStream CreateStream() const;
+
+  /**
+   * @brief Compute the alignment of one utterance.
+   *
+   * @param stream A stream created by CreateStream() and filled with a
+   *               waveform.
+   * @param text   The transcript of the whole utterance. Hanzi text is
+   *               tokenized per character (multi-character dictionary keys
+   *               give pronunciation context); anything else is split on
+   *               whitespace. Punctuation is ignored.
+   * @return The alignment result; empty (no tiers, empty textgrid) with a
+   *         warning on stderr when the stream has no features, every word
+   *         is out-of-vocabulary, or word boundaries cannot be recovered.
+   */
+  ForcedAlignmentResult Compute(const OfflineStream &stream,
+                                const std::string &text) const;
+
+ private:
+  explicit ForcedAligner(const SherpaOnnxForcedAligner *p);
+};
+
+// ============================================================================
 // Non-streaming TTS
 // ============================================================================
 /** @brief VITS model configuration. */
@@ -859,7 +1091,12 @@ struct OfflineTtsVitsModelConfig {
   std::string lexicon;
   /** Token file. */
   std::string tokens;
-  /** Data directory such as `espeak-ng-data`. */
+  /**
+   * Data directory such as `espeak-ng-data`.
+   *
+   * @deprecated Ignored since v2.0.0. Pass pre-phonemized input via
+   * GenerationConfig::phoneme_codepoints (or ::tokens) instead.
+   */
   std::string data_dir;
   /** Reserved field. Currently unused by the wrapper. */
   std::string dict_dir;
@@ -882,7 +1119,12 @@ struct OfflineTtsMatchaModelConfig {
   std::string lexicon;
   /** Token file. */
   std::string tokens;
-  /** Data directory such as `espeak-ng-data`. */
+  /**
+   * Data directory such as `espeak-ng-data`.
+   *
+   * @deprecated Ignored since v2.0.0. Pass pre-phonemized input via
+   * GenerationConfig::phoneme_codepoints (or ::tokens) instead.
+   */
   std::string data_dir;
   /** Reserved field. Currently unused by the wrapper. */
   std::string dict_dir;
@@ -901,7 +1143,12 @@ struct OfflineTtsKokoroModelConfig {
   std::string voices;
   /** Token file. */
   std::string tokens;
-  /** Data directory such as `espeak-ng-data`. */
+  /**
+   * Data directory such as `espeak-ng-data`.
+   *
+   * @deprecated Ignored since v2.0.0. Pass pre-phonemized input via
+   * GenerationConfig::phoneme_codepoints (or ::tokens) instead.
+   */
   std::string data_dir;
   /** Reserved field. Currently unused by the wrapper. */
   std::string dict_dir;
@@ -922,11 +1169,19 @@ struct OfflineTtsKittenModelConfig {
   std::string voices;
   /** Token file. */
   std::string tokens;
-  /** Data directory. */
+  /**
+   * Data directory.
+   *
+   * @deprecated Ignored since v2.0.0. Pass pre-phonemized input via
+   * GenerationConfig::phoneme_codepoints (or ::tokens) instead.
+   */
   std::string data_dir;
 
   /** Length scale. Values < 1 are faster; values > 1 are slower. */
   float length_scale = 1.0;
+
+  /** Lexicon file. */
+  std::string lexicon;
 };
 
 /** @brief ZipVoice model configuration. */
@@ -939,7 +1194,12 @@ struct OfflineTtsZipvoiceModelConfig {
   std::string decoder;
   /** Vocoder model file. */
   std::string vocoder;
-  /** Data directory. */
+  /**
+   * Data directory.
+   *
+   * @deprecated Ignored since v2.0.0. Pass pre-phonemized input via
+   * GenerationConfig::phoneme_codepoints (or ::tokens) instead.
+   */
   std::string data_dir;
   /** Lexicon file. */
   std::string lexicon;
@@ -1042,6 +1302,27 @@ struct GenerationConfig {
 
   /** Model-specific extra attributes serialized to JSON internally. */
   std::unordered_map<std::string, std::string> extra;
+
+  /**
+   * Pre-phonemized input as Unicode codepoints.
+   *
+   * Phonemize the text yourself (for instance with piper_phonemize) and pass
+   * the resulting codepoints here. When set, it is used in place of the `text`
+   * argument. Leave empty to use `text` with a lexicon.
+   *
+   * Each inner vector is one sentence.
+   */
+  std::vector<std::vector<int32_t>> phoneme_codepoints;
+
+  /**
+   * Pre-tokenized input, e.g. Chinese pinyin like "zhong1".
+   *
+   * Each inner vector is one sentence.
+   *
+   * Mutually exclusive with `phoneme_codepoints`: if both are set, a warning
+   * is printed and generation fails.
+   */
+  std::vector<std::vector<std::string>> tokens;
 };
 
 /** @brief Configuration for offline TTS. */
@@ -1112,6 +1393,11 @@ class SHERPA_ONNX_API OfflineTts
 
   /** @brief Return the number of supported speakers. */
   int32_t NumSpeakers() const;
+
+  /** @brief Return the language/voice of the model, e.g., "en-us".
+   *
+   * Returns an empty string if such information is not available. */
+  std::string Lang() const;
 
   /**
    * @brief Generate speech using the simple speaker-id and speed interface.
@@ -1234,6 +1520,27 @@ struct OfflineSpeechDenoiserDpdfNetModelConfig {
 };
 
 /**
+ * @brief VoxLock target-speaker voice isolation model configuration.
+ *
+ * VoxLock keeps the voice of one speaker (the caller) and removes other
+ * voices. The model is from https://github.com/arbazsiddiqui/voxlock
+ */
+struct OfflineSpeechDenoiserVoxLockModelConfig {
+  /** Path to the VoxLock enroll model, e.g., `enroll.onnx`. */
+  std::string enroll_model;
+  /** Path to the VoxLock chunk model, e.g., `chunk.onnx`. */
+  std::string chunk_model;
+  /**
+   * Optional. Path to a wave file with at least 3 seconds of the caller's
+   * voice. From a longer file, the loudest 3 seconds within the first 30
+   * seconds are used. A file that is shorter or cannot be read is ignored,
+   * as if it were empty. If empty or ignored, the voice sample is taken from
+   * the input audio; see the C API docs for the offline/online fallbacks.
+   */
+  std::string voice_sample;
+};
+
+/**
  * @brief Speech denoiser model configuration.
  *
  * Configure exactly one model family. If multiple model families are set, one
@@ -1244,6 +1551,8 @@ struct OfflineSpeechDenoiserModelConfig {
   OfflineSpeechDenoiserGtcrnModelConfig gtcrn;
   /** DPDFNet configuration. */
   OfflineSpeechDenoiserDpdfNetModelConfig dpdfnet;
+  /** VoxLock configuration. */
+  OfflineSpeechDenoiserVoxLockModelConfig voxlock;
   /** Number of inference threads. */
   int32_t num_threads = 1;
   /** Enable verbose debug logging. */
@@ -1283,6 +1592,10 @@ class SHERPA_ONNX_API OfflineSpeechDenoiser
   /** @brief Return the expected input sample rate. */
   int32_t GetSampleRate() const;
 
+  /** @brief Set a PCM voice sample for VoxLock. */
+  bool SetVoiceSample(const float *samples, int32_t n,
+                      int32_t sample_rate) const;
+
  private:
   explicit OfflineSpeechDenoiser(const SherpaOnnxOfflineSpeechDenoiser *p);
 };
@@ -1311,6 +1624,10 @@ class SHERPA_ONNX_API OnlineSpeechDenoiser
 
   /** @brief Reset the denoiser for a new stream. */
   void Reset() const;
+
+  /** @brief Set a PCM voice sample for VoxLock. */
+  bool SetVoiceSample(const float *samples, int32_t n,
+                      int32_t sample_rate) const;
 
   /** @brief Return the expected input sample rate. */
   int32_t GetSampleRate() const;
@@ -1383,8 +1700,11 @@ struct VadModelConfig {
 
 /** @brief One speech segment produced by the VAD wrapper. */
 struct SpeechSegment {
-  /** Start sample index relative to the processed audio timeline. */
-  int32_t start = 0;
+  /** Start sample index relative to the processed audio timeline.
+   *
+   * It is an absolute position and keeps increasing during the lifetime of
+   * a detector, so it is 64-bit. */
+  int64_t start = 0;
   /** Speech samples for the segment. */
   std::vector<float> samples;
 };
@@ -1403,7 +1723,7 @@ class SHERPA_ONNX_API CircularBuffer
   void Push(const float *p, int32_t n) const;
 
   /** @brief Copy a contiguous span from the buffer. */
-  std::vector<float> Get(int32_t start_index, int32_t n) const;
+  std::vector<float> Get(int64_t start_index, int32_t n) const;
 
   /** @brief Remove samples from the head of the buffer. */
   void Pop(int32_t n) const;
@@ -1412,7 +1732,7 @@ class SHERPA_ONNX_API CircularBuffer
   int32_t Size() const;
 
   /** @brief Return the current head index. */
-  int32_t Head() const;
+  int64_t Head() const;
 
   /** @brief Reset the buffer to empty. */
   void Reset() const;
@@ -1720,6 +2040,14 @@ struct SourceSeparationOutput {
   int32_t sample_rate = 0;
 };
 
+/**
+ * @brief Progress callback for offline source separation.
+ *
+ * Called as (num_processed_chunks, num_total_chunks).
+ */
+using OfflineSourceSeparationProgressCallback =
+    std::function<void(int32_t, int32_t)>;  // NOLINT
+
 /** @brief RAII wrapper for offline source separation. */
 class SHERPA_ONNX_API OfflineSourceSeparation
     : public MoveOnly<OfflineSourceSeparation,
@@ -1744,6 +2072,12 @@ class SHERPA_ONNX_API OfflineSourceSeparation
   SourceSeparationOutput Process(const float *const *samples,
                                  int32_t num_channels, int32_t num_samples,
                                  int32_t sample_rate) const;
+
+  /** @brief Run source separation with a progress callback. */
+  SourceSeparationOutput Process(
+      const float *const *samples, int32_t num_channels, int32_t num_samples,
+      int32_t sample_rate,
+      const OfflineSourceSeparationProgressCallback &callback) const;
 
   /** @brief Return the output sample rate. */
   int32_t GetOutputSampleRate() const;
@@ -1986,9 +2320,13 @@ struct OfflineSpeakerDiarizationSegment {
   float confidence = kUnavailableConfidence;
 };
 
-/** @brief Progress callback for offline speaker diarization. */
+/**
+ * @brief Progress callback for offline speaker diarization.
+ *
+ * Called as (num_processed_chunks, num_total_chunks).
+ */
 using OfflineSpeakerDiarizationProgressCallback =
-    std::function<void(int32_t num_processed_chunks, int32_t num_total_chunks)>;
+    std::function<void(int32_t, int32_t)>;  // NOLINT
 
 /** @brief RAII wrapper for offline speaker diarization. */
 class SHERPA_ONNX_API OfflineSpeakerDiarization
@@ -2050,7 +2388,8 @@ class SHERPA_ONNX_API OfflineDiacritization
     : public MoveOnly<OfflineDiacritization, SherpaOnnxOfflineDiacritization> {
  public:
   /** @brief Create an offline diacritization model. */
-  static OfflineDiacritization Create(const OfflineDiacritizationConfig &config);
+  static OfflineDiacritization Create(
+      const OfflineDiacritizationConfig &config);
 
   /** @brief Destroy the wrapped C handle. */
   void Destroy(const SherpaOnnxOfflineDiacritization *diacrt) const;

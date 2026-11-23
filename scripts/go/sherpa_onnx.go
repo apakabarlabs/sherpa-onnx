@@ -124,6 +124,11 @@ type OnlineCtcFstDecoderConfig struct {
 	MaxActive int
 }
 
+type OfflineCtcFstDecoderConfig struct {
+	Graph     string
+	MaxActive int
+}
+
 type HomophoneReplacerConfig struct {
 	DictDir  string // unused
 	Lexicon  string
@@ -501,10 +506,10 @@ type OfflineCanaryModelConfig struct {
 }
 
 type OfflineCohereTranscribeModelConfig struct {
-	Encoder string
-	Decoder string
-	Language string
-	UsePunct int
+	Encoder                     string
+	Decoder                     string
+	Language                    string
+	UsePunct                    int
 	UseInverseTextNormalization int
 }
 
@@ -572,25 +577,25 @@ type OfflineLMConfig struct {
 }
 
 type OfflineModelConfig struct {
-	Transducer    OfflineTransducerModelConfig
-	Paraformer    OfflineParaformerModelConfig
-	NemoCTC       OfflineNemoEncDecCtcModelConfig
-	Whisper       OfflineWhisperModelConfig
-	Tdnn          OfflineTdnnModelConfig
-	SenseVoice    OfflineSenseVoiceModelConfig
-	Moonshine     OfflineMoonshineModelConfig
-	FireRedAsr    OfflineFireRedAsrModelConfig
-	FunAsrNano    OfflineFunASRNanoModelConfig
-	Dolphin       OfflineDolphinModelConfig
-	ZipformerCtc  OfflineZipformerCtcModelConfig
-	Canary        OfflineCanaryModelConfig
-	WenetCtc      OfflineWenetCtcModelConfig
-	Omnilingual   OfflineOmnilingualAsrCtcModelConfig
-	MedAsr        OfflineMedAsrCtcModelConfig
-	FireRedAsrCtc OfflineFireRedAsrCtcModelConfig
-	Qwen3ASR      OfflineQwen3ASRModelConfig
+	Transducer       OfflineTransducerModelConfig
+	Paraformer       OfflineParaformerModelConfig
+	NemoCTC          OfflineNemoEncDecCtcModelConfig
+	Whisper          OfflineWhisperModelConfig
+	Tdnn             OfflineTdnnModelConfig
+	SenseVoice       OfflineSenseVoiceModelConfig
+	Moonshine        OfflineMoonshineModelConfig
+	FireRedAsr       OfflineFireRedAsrModelConfig
+	FunAsrNano       OfflineFunASRNanoModelConfig
+	Dolphin          OfflineDolphinModelConfig
+	ZipformerCtc     OfflineZipformerCtcModelConfig
+	Canary           OfflineCanaryModelConfig
+	WenetCtc         OfflineWenetCtcModelConfig
+	Omnilingual      OfflineOmnilingualAsrCtcModelConfig
+	MedAsr           OfflineMedAsrCtcModelConfig
+	FireRedAsrCtc    OfflineFireRedAsrCtcModelConfig
+	Qwen3ASR         OfflineQwen3ASRModelConfig
 	CohereTranscribe OfflineCohereTranscribeModelConfig
-	Tokens        string // Path to tokens.txt
+	Tokens           string // Path to tokens.txt
 
 	// Number of threads to use for neural network computation
 	NumThreads int
@@ -619,13 +624,14 @@ type OfflineRecognizerConfig struct {
 	DecodingMethod string
 
 	// Used only when DecodingMethod is modified_beam_search.
-	MaxActivePaths int
-	HotwordsFile   string
-	HotwordsScore  float32
-	BlankPenalty   float32
-	RuleFsts       string
-	RuleFars       string
-	Hr             HomophoneReplacerConfig
+	MaxActivePaths      int
+	HotwordsFile        string
+	HotwordsScore       float32
+	BlankPenalty        float32
+	RuleFsts            string
+	RuleFars            string
+	Hr                  HomophoneReplacerConfig
+	CtcFstDecoderConfig OfflineCtcFstDecoderConfig
 }
 
 // It wraps a pointer from C
@@ -765,6 +771,9 @@ func newCOfflineRecognizerConfig(config *OfflineRecognizerConfig) *C.struct_Sher
 
 	c.hr.lexicon = C.CString(config.Hr.Lexicon)
 	c.hr.rule_fsts = C.CString(config.Hr.RuleFsts)
+
+	c.ctc_fst_decoder_config.graph = C.CString(config.CtcFstDecoderConfig.Graph)
+	c.ctc_fst_decoder_config.max_active = C.int(config.CtcFstDecoderConfig.MaxActive)
 	return &c
 }
 func freeCOfflineRecognizerConfig(c *C.struct_SherpaOnnxOfflineRecognizerConfig) {
@@ -827,6 +836,7 @@ func freeCOfflineRecognizerConfig(c *C.struct_SherpaOnnxOfflineRecognizerConfig)
 		&c.rule_fars,
 		&c.hr.lexicon,
 		&c.hr.rule_fsts,
+		&c.ctc_fst_decoder_config.graph,
 	}
 
 	for _, field := range stringFields {
@@ -985,7 +995,7 @@ type OfflineTtsVitsModelConfig struct {
 	Model       string  // Path to the VITS onnx model
 	Lexicon     string  // Path to lexicon.txt
 	Tokens      string  // Path to tokens.txt
-	DataDir     string  // Path to espeak-ng-data directory
+	DataDir     string  // Deprecated. Ignored. Use Lexicon or phoneme_codepoints instead.
 	NoiseScale  float32 // noise scale for vits models. Please use 0.667 in general
 	NoiseScaleW float32 // noise scale for vits models. Please use 0.8 in general
 	LengthScale float32 // Please use 1.0 in general. Smaller -> Faster speech speed. Larger -> Slower speech speed
@@ -997,8 +1007,8 @@ type OfflineTtsMatchaModelConfig struct {
 	Vocoder       string  // Path to the vocoder model for MatchaTTS
 	Lexicon       string  // Path to lexicon.txt
 	Tokens        string  // Path to tokens.txt
-	DataDir       string  // Path to espeak-ng-data directory
-	NoiseScale    float32 // noise scale for vits models. Please use 0.667 in general
+	DataDir       string  // Deprecated. Ignored. Use Lexicon or PhonemeCodepoints instead.
+	NoiseScale    float32 // noise scale for matcha models. Please use 1.0 in general
 	LengthScale   float32 // Please use 1.0 in general. Smaller -> Faster speech speed. Larger -> Slower speech speed
 	DictDir       string  // unused
 }
@@ -1007,7 +1017,7 @@ type OfflineTtsKokoroModelConfig struct {
 	Model       string  // Path to the model for kokoro
 	Voices      string  // Path to the voices.bin for kokoro
 	Tokens      string  // Path to tokens.txt
-	DataDir     string  // Path to espeak-ng-data directory
+	DataDir     string  // Deprecated. Ignored. Use Lexicon or phoneme_codepoints instead.
 	DictDir     string  // unused
 	Lexicon     string  // Path to lexicon files
 	Lang        string  // Example: es for Spanish, fr-fr for French. Can be empty
@@ -1018,8 +1028,9 @@ type OfflineTtsKittenModelConfig struct {
 	Model       string  // Path to the model for kitten
 	Voices      string  // Path to the voices.bin for kitten
 	Tokens      string  // Path to tokens.txt
-	DataDir     string  // Path to espeak-ng-data directory
+	DataDir     string  // Deprecated. Ignored. Use Lexicon or PhonemeCodepoints instead.
 	LengthScale float32 // Please use 1.0 in general. Smaller -> Faster speech speed. Larger -> Slower speech speed
+	Lexicon     string  // Path to lexicon.txt
 }
 
 type OfflineTtsPocketModelConfig struct {
@@ -1037,7 +1048,7 @@ type OfflineTtsZipvoiceModelConfig struct {
 	Tokens  string // Path to tokens.txt for ZipVoice
 	Encoder string // Path to text encoder (e.g. encoder.onnx)
 	Decoder string // Path to flow-matching decoder (e.g. fm_decoder.onnx)
-	DataDir string // Path to espeak-ng-data
+	DataDir string // Deprecated. Ignored. Use Lexicon or Tokens instead. (ZipVoice does not support PhonemeCodepoints.)
 	Lexicon string // Path to lexicon.txt (needed for zh)
 	Vocoder string // Path to vocoder (e.g. vocos_24khz.onnx)
 
@@ -1104,6 +1115,22 @@ type GenerationConfig struct {
 
 	// Opaque JSON passed directly to C
 	Extra json.RawMessage
+
+	// Pre-phonemized input as Unicode codepoints. Each inner slice is one
+	// sentence. When set, it is used in place of the text argument; leave
+	// empty to use text with a lexicon.
+	//
+	// Phonemize the text yourself, e.g., with
+	// https://github.com/csukuangfj/piper-phonemize-go
+	//
+	// Mutually exclusive with Tokens.
+	PhonemeCodepoints [][]int32
+
+	// Pre-tokenized input, e.g., Chinese pinyin like "zhong1". Each inner
+	// slice is one sentence.
+	//
+	// Mutually exclusive with PhonemeCodepoints.
+	Tokens [][]string
 }
 
 // The offline tts class. It wraps a pointer from C.
@@ -1280,6 +1307,9 @@ func NewOfflineTts(config *OfflineTtsConfig) *OfflineTts {
 
 	c.model.kitten.length_scale = C.float(config.Model.Kitten.LengthScale)
 
+	c.model.kitten.lexicon = C.CString(config.Model.Kitten.Lexicon)
+	defer C.free(unsafe.Pointer(c.model.kitten.lexicon))
+
 	// zipvoice
 	c.model.zipvoice.tokens = C.CString(config.Model.Zipvoice.Tokens)
 	defer C.free(unsafe.Pointer(c.model.zipvoice.tokens))
@@ -1371,6 +1401,17 @@ func (tts *OfflineTts) NumSpeakers() int {
 
 func (tts *OfflineTts) SampleRate() int {
 	return int(C.SherpaOnnxOfflineTtsSampleRate(tts.impl))
+}
+
+// Lang returns the language/voice of the model, e.g., "en-us".
+// It returns an empty string if such information is not available.
+func (tts *OfflineTts) Lang() string {
+	p := C.SherpaOnnxOfflineTtsLang(tts.impl)
+	if p == nil {
+		return ""
+	}
+	defer C.SherpaOnnxDestroyOfflineTtsLang(p)
+	return C.GoString(p)
 }
 
 func (tts *OfflineTts) Generate(text string, sid int, speed float32) *GeneratedAudio {
@@ -1549,6 +1590,70 @@ func (tts *OfflineTts) GenerateWithConfig(
 
 	cCfg.extra = cExtra
 
+	// Flatten PhonemeCodepoints; the C API takes a flat array plus the
+	// length of each sentence. The arrays are allocated in C memory to
+	// follow the cgo pointer rules and are freed after use.
+	if len(cfg.PhonemeCodepoints) > 0 {
+		numCodepoints := 0
+		for _, sentence := range cfg.PhonemeCodepoints {
+			numCodepoints += len(sentence)
+		}
+		if numCodepoints > 0 {
+			cFlatCodepoints := (*C.int32_t)(C.malloc(C.size_t(numCodepoints) * C.size_t(unsafe.Sizeof(C.int32_t(0)))))
+			defer C.free(unsafe.Pointer(cFlatCodepoints))
+			cCodepointLens := (*C.int32_t)(C.malloc(C.size_t(len(cfg.PhonemeCodepoints)) * C.size_t(unsafe.Sizeof(C.int32_t(0)))))
+			defer C.free(unsafe.Pointer(cCodepointLens))
+
+			flat := unsafe.Slice(cFlatCodepoints, numCodepoints)
+			lens := unsafe.Slice(cCodepointLens, len(cfg.PhonemeCodepoints))
+			k := 0
+			for i, sentence := range cfg.PhonemeCodepoints {
+				for _, cp := range sentence {
+					flat[k] = C.int32_t(cp)
+					k++
+				}
+				lens[i] = C.int32_t(len(sentence))
+			}
+
+			cCfg.phoneme_codepoints = cFlatCodepoints
+			cCfg.phoneme_codepoints_lens = cCodepointLens
+			cCfg.phoneme_codepoints_num_sentences = C.int32_t(len(cfg.PhonemeCodepoints))
+		}
+	}
+
+	// Flatten Tokens; the C API takes a flat array plus the length of each
+	// sentence. Same C-memory allocation as above; the token strings are
+	// copied to C memory and freed after use.
+	if len(cfg.Tokens) > 0 {
+		numTokens := 0
+		for _, sentence := range cfg.Tokens {
+			numTokens += len(sentence)
+		}
+		if numTokens > 0 {
+			cFlatTokens := (**C.char)(C.malloc(C.size_t(numTokens) * C.size_t(unsafe.Sizeof(uintptr(0)))))
+			defer C.free(unsafe.Pointer(cFlatTokens))
+			cTokenLens := (*C.int32_t)(C.malloc(C.size_t(len(cfg.Tokens)) * C.size_t(unsafe.Sizeof(C.int32_t(0)))))
+			defer C.free(unsafe.Pointer(cTokenLens))
+
+			flat := unsafe.Slice(cFlatTokens, numTokens)
+			lens := unsafe.Slice(cTokenLens, len(cfg.Tokens))
+			k := 0
+			for i, sentence := range cfg.Tokens {
+				for _, tok := range sentence {
+					s := C.CString(tok)
+					defer C.free(unsafe.Pointer(s))
+					flat[k] = s
+					k++
+				}
+				lens[i] = C.int32_t(len(sentence))
+			}
+
+			cCfg.tokens = cFlatTokens
+			cCfg.tokens_lens = cTokenLens
+			cCfg.tokens_num_sentences = C.int32_t(len(cfg.Tokens))
+		}
+	}
+
 	var audio *C.struct_SherpaOnnxGeneratedAudio
 	if cb != nil {
 		h := cgo.NewHandle(cb)
@@ -1664,8 +1769,8 @@ func (buffer *CircularBuffer) Push(samples []float32) {
 	C.SherpaOnnxCircularBufferPush(buffer.impl, (*C.float)(&samples[0]), C.int(len(samples)))
 }
 
-func (buffer *CircularBuffer) Get(start int, n int) []float32 {
-	samples := C.SherpaOnnxCircularBufferGet(buffer.impl, C.int(start), C.int(n))
+func (buffer *CircularBuffer) Get(start int64, n int) []float32 {
+	samples := C.SherpaOnnxCircularBufferGet(buffer.impl, C.int64_t(start), C.int(n))
 	defer C.SherpaOnnxCircularBufferFree(samples)
 
 	result := make([]float32, n)
@@ -1686,8 +1791,8 @@ func (buffer *CircularBuffer) Size() int {
 	return int(C.SherpaOnnxCircularBufferSize(buffer.impl))
 }
 
-func (buffer *CircularBuffer) Head() int {
-	return int(C.SherpaOnnxCircularBufferHead(buffer.impl))
+func (buffer *CircularBuffer) Head() int64 {
+	return int64(C.SherpaOnnxCircularBufferHead(buffer.impl))
 }
 
 func (buffer *CircularBuffer) Reset() {
@@ -1695,7 +1800,7 @@ func (buffer *CircularBuffer) Reset() {
 }
 
 type SpeechSegment struct {
-	Start   int
+	Start   int64
 	Samples []float32
 }
 
@@ -1770,7 +1875,7 @@ func (vad *VoiceActivityDetector) Front() *SpeechSegment {
 	defer C.SherpaOnnxDestroySpeechSegment(f)
 
 	ans := &SpeechSegment{}
-	ans.Start = int(f.start)
+	ans.Start = int64(f.start)
 
 	n := int(f.n)
 	ans.Samples = make([]float32, n)
@@ -2581,9 +2686,32 @@ type OfflineSpeechDenoiserDpdfNetModelConfig struct {
 	AttenuationLimitDb float32
 }
 
+// VoxLock keeps the voice of one speaker (the caller) and removes the other
+// voices. The model is from https://github.com/arbazsiddiqui/voxlock
+type OfflineSpeechDenoiserVoxLockModelConfig struct {
+	// Path to the VoxLock enroll model, e.g., enroll.onnx. It runs once on a
+	// voice sample of the speaker to keep.
+	EnrollModel string
+
+	// Path to the VoxLock chunk model, e.g., chunk.onnx or chunk_int8.onnx.
+	// It runs on each chunk of the audio.
+	ChunkModel string
+
+	// Optional. Path to a wave file with at least 3 seconds of the caller's
+	// voice. VoxLock keeps this voice and removes the others. From a longer
+	// file, it uses the loudest 3 seconds within the first 30 seconds. A file
+	// that is shorter or cannot be read is ignored, as if it were empty. If
+	// empty or ignored, the voice sample is taken from the input audio: the
+	// offline denoiser uses the loudest 3 seconds in the first 15 seconds of
+	// the input, and the online denoiser passes the audio through unchanged
+	// until 3 seconds of speech have been heard, then uses that speech.
+	VoiceSample string
+}
+
 type OfflineSpeechDenoiserModelConfig struct {
 	Gtcrn      OfflineSpeechDenoiserGtcrnModelConfig
 	DpdfNet    OfflineSpeechDenoiserDpdfNetModelConfig
+	VoxLock    OfflineSpeechDenoiserVoxLockModelConfig
 	NumThreads int32
 	Debug      int32
 	Provider   string
@@ -2660,6 +2788,13 @@ func NewOfflineSpeechDenoiser(config *OfflineSpeechDenoiserConfig) *OfflineSpeec
 	defer C.free(unsafe.Pointer(c.model.dpdfnet.model))
 	c.model.dpdfnet.attenuation_limit_db = C.float(config.Model.DpdfNet.AttenuationLimitDb)
 
+	c.model.voxlock.enroll_model = C.CString(config.Model.VoxLock.EnrollModel)
+	defer C.free(unsafe.Pointer(c.model.voxlock.enroll_model))
+	c.model.voxlock.chunk_model = C.CString(config.Model.VoxLock.ChunkModel)
+	defer C.free(unsafe.Pointer(c.model.voxlock.chunk_model))
+	c.model.voxlock.voice_sample = C.CString(config.Model.VoxLock.VoiceSample)
+	defer C.free(unsafe.Pointer(c.model.voxlock.voice_sample))
+
 	c.model.num_threads = C.int(config.Model.NumThreads)
 	c.model.debug = C.int(config.Model.Debug)
 
@@ -2708,6 +2843,13 @@ func NewOnlineSpeechDenoiser(config *OnlineSpeechDenoiserConfig) *OnlineSpeechDe
 	defer C.free(unsafe.Pointer(c.model.gtcrn.model))
 	c.model.dpdfnet.model = C.CString(config.Model.DpdfNet.Model)
 	defer C.free(unsafe.Pointer(c.model.dpdfnet.model))
+
+	c.model.voxlock.enroll_model = C.CString(config.Model.VoxLock.EnrollModel)
+	defer C.free(unsafe.Pointer(c.model.voxlock.enroll_model))
+	c.model.voxlock.chunk_model = C.CString(config.Model.VoxLock.ChunkModel)
+	defer C.free(unsafe.Pointer(c.model.voxlock.chunk_model))
+	c.model.voxlock.voice_sample = C.CString(config.Model.VoxLock.VoiceSample)
+	defer C.free(unsafe.Pointer(c.model.voxlock.voice_sample))
 
 	c.model.num_threads = C.int(config.Model.NumThreads)
 	c.model.debug = C.int(config.Model.Debug)
@@ -2967,4 +3109,182 @@ func (ss *SourceSeparator) Process(buf *AudioBuffer) []*AudioBuffer {
 	}
 
 	return stems
+}
+
+// ============================================================
+// Forced alignment
+// ============================================================
+
+// Alignment options of a forced aligner. A stream can override any of them
+// before the alignment is computed. A value of 0 lets the C API use its
+// default for that option.
+type ForcedAlignmentOptions struct {
+	Beam            float32 // Decoding beam of the alignment search; 0 means the default 10
+	RetryBeam       float32 // Decoding beam of the retry pass; 0 means the default 40
+	TransitionScale float32 // Transition-probability scale; 0 means the default 1
+	SelfLoopScale   float32 // Self-loop probability scale; 0 means the default 0.1
+	AcousticScale   float32 // Acoustic likelihood scale; 0 means the default 0.1
+}
+
+// Configuration of a ForcedAligner.
+type ForcedAlignerConfig struct {
+	// ModelDir is the directory of one forced-alignment acoustic model.
+	// Required files: meta.json (feature chain + silence/OOV parameters),
+	// final.alimdl (the alignment model, kaldi format: TransitionModel +
+	// AmDiagGmm; note it is final.alimdl, NOT final.mdl), tree (the
+	// context dependency tree), lda.mat (required iff the feature chain is
+	// splice+LDA) and phones.txt (optional phone table; falls back to the
+	// phones list in meta.json when missing). Other files of the upstream
+	// model bundles are unused and ignored; missing required files are
+	// reported by name.
+	ModelDir string
+
+	// Lexicon is the pronunciation dictionary used to build the lexicon
+	// FST. One pronunciation per line: "key [probability columns ...]
+	// phone1 phone2 ...". Probability columns are ignored. Several lines
+	// under one key give several pronunciations of the same word/character
+	// and ALL are kept: each becomes a parallel path in the lexicon FST and
+	// the acoustics pick the one used by the alignment. A multi-token key
+	// writes one " || " separated phone group per word/character
+	// ("银行 || i n || h a ŋ"); single-token keys need no " || "
+	// ("行 x a ŋ"). Words without a pronunciation are reported as
+	// out-of-vocabulary and aligned as the model's OOV phone.
+	Lexicon string
+
+	Options ForcedAlignmentOptions // Default alignment options
+	Debug   int                    // True to print debug information
+}
+
+// One aligned interval: a phone in the "phones" tier or a word in the
+// "words" tier.
+type AlignmentInterval struct {
+	Start float32 // Start time in seconds
+	End   float32 // End time in seconds
+
+	// Text is the label of this interval: the word for a word interval, the
+	// phone symbol for a phone interval. It is empty for a silence gap in
+	// the "words" tier (Praat interval tiers must tile the full time range,
+	// so the gaps between words are intervals with empty text).
+	Text string
+}
+
+// One tier of the alignment (phones or words).
+type AlignmentTier struct {
+	Name      string // "phones" or "words"; never empty
+	Intervals []AlignmentInterval
+}
+
+// The result of ForcedAligner.Compute(): the phone and word boundaries of
+// one utterance, and the same content as a Praat TextGrid.
+type ForcedAlignmentResult struct {
+	Duration float32 // Duration of the aligned audio in seconds
+
+	// Tiers are the alignment tiers: Tiers[0].Name == "phones",
+	// Tiers[1].Name == "words". Empty for an empty result.
+	Tiers []AlignmentTier
+
+	// TextGrid is the alignment as a Praat TextGrid string. Write it to a
+	// .TextGrid file and open it with Praat (https://www.fon.hum.uva.nl/praat/)
+	// to visualize the phone and word boundaries. Empty for an empty result.
+	TextGrid string
+}
+
+type ForcedAligner struct {
+	impl *C.struct_SherpaOnnxForcedAligner
+}
+
+// NewForcedAligner creates a forced aligner from a model directory and a
+// pronunciation dictionary. It returns nil on failure, e.g. a missing
+// model file; see stderr for the reason.
+func NewForcedAligner(config *ForcedAlignerConfig) *ForcedAligner {
+	cfg := C.struct_SherpaOnnxForcedAlignerConfig{}
+	cfg.model_dir = C.CString(config.ModelDir)
+	defer C.free(unsafe.Pointer(cfg.model_dir))
+	cfg.lexicon = C.CString(config.Lexicon)
+	defer C.free(unsafe.Pointer(cfg.lexicon))
+	cfg.options.beam = C.float(config.Options.Beam)
+	cfg.options.retry_beam = C.float(config.Options.RetryBeam)
+	cfg.options.transition_scale = C.float(config.Options.TransitionScale)
+	cfg.options.self_loop_scale = C.float(config.Options.SelfLoopScale)
+	cfg.options.acoustic_scale = C.float(config.Options.AcousticScale)
+	cfg.debug = C.int(config.Debug)
+
+	impl := C.SherpaOnnxCreateForcedAligner(&cfg)
+	if impl == nil {
+		return nil
+	}
+	a := &ForcedAligner{}
+	a.impl = impl
+	return a
+}
+
+// DeleteForcedAligner frees the memory of a forced aligner.
+//
+// The user is responsible to invoke [DeleteForcedAligner]() to free the
+// memory.
+func DeleteForcedAligner(a *ForcedAligner) {
+	C.SherpaOnnxDestroyForcedAligner(a.impl)
+	a.impl = nil
+}
+
+// CreateStream creates an utterance stream. Fill it with
+// [OfflineStream.AcceptWaveform](), then pass it to
+// [ForcedAligner.Compute]().
+//
+// The user is responsible to invoke [DeleteOfflineStream]() to free it.
+func (a *ForcedAligner) CreateStream() *OfflineStream {
+	stream := &OfflineStream{}
+	stream.impl = C.SherpaOnnxForcedAlignerCreateStream(a.impl)
+	return stream
+}
+
+// Compute computes the alignment of one utterance.
+//
+// It returns nil when the alignment itself fails. The documented empty
+// result (empty text, no features, every word out-of-vocabulary, or word
+// boundaries cannot be recovered) comes back non-nil with empty Tiers and
+// an empty TextGrid.
+func (a *ForcedAligner) Compute(s *OfflineStream, text string) *ForcedAlignmentResult {
+	inputText := C.CString(text)
+	defer C.free(unsafe.Pointer(inputText))
+
+	p := C.SherpaOnnxForcedAlignerCompute(a.impl, s.impl, inputText)
+	if p == nil {
+		return nil
+	}
+	defer C.SherpaOnnxDestroyForcedAlignmentResult(p)
+
+	// Everything is copied into Go values before the deferred free runs.
+	result := &ForcedAlignmentResult{}
+	result.Duration = float32(p.duration)
+	result.TextGrid = C.GoString(p.textgrid)
+
+	n := int(p.num_tiers)
+	if n == 0 || p.tiers == nil {
+		return result
+	}
+	result.Tiers = make([]AlignmentTier, n)
+	tiers := unsafe.Slice(p.tiers, n)
+	for i := 0; i < n; i++ {
+		t := tiers[i]
+		tier := AlignmentTier{Name: C.GoString(t.name)}
+
+		m := int(t.num_intervals)
+		if m > 0 && t.intervals != nil {
+			tier.Intervals = make([]AlignmentInterval, m)
+			intervals := unsafe.Slice(t.intervals, m)
+			for k := 0; k < m; k++ {
+				iv := intervals[k]
+				tier.Intervals[k] = AlignmentInterval{
+					Start: float32(iv.start),
+					End:   float32(iv.end),
+					Text:  C.GoString(iv.text),
+				}
+			}
+		}
+
+		result.Tiers[i] = tier
+	}
+
+	return result
 }

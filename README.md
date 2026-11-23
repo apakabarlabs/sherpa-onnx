@@ -1,10 +1,4 @@
-<div align="center">
-
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/k2-fsa/sherpa-onnx)
-
-</div>
-
- ### Supported functions
+### Supported functions
 
 |Speech recognition| [Speech synthesis][tts-url] | [Source separation][ss-url] |
 |------------------|------------------|-------------------|
@@ -21,6 +15,10 @@
 | [Keyword spotting][kws-url] | [Add punctuation][punct-url] | [Speech enhancement][se-url] |
 |------------------|-----------------|--------------------|
 |     ✔️            |       ✔️         |      ✔️             |
+
+| Forced alignment |  |  |
+|------------------|-----------------|--------------------|
+|     ✔️            |                 |                    |
 
 
 ### Supported platforms
@@ -106,9 +104,11 @@ This repository supports running the following functions **locally**
   - Spoken language identification
   - Audio tagging
   - VAD (e.g., [silero-vad][silero-vad])
-  - Speech enhancement (e.g., [gtcrn][gtcrn], [DPDFNet](https://github.com/ceva-ip/DPDFNet))
+  - Speech enhancement (e.g., [gtcrn][gtcrn], [DPDFNet](https://github.com/ceva-ip/DPDFNet), [VoxLock](https://github.com/arbazsiddiqui/voxlock))
   - Keyword spotting
   - Source separation (e.g., [spleeter][spleeter], [UVR][UVR])
+  - Forced alignment (i.e., computing word-level timestamps given an audio
+    and its transcript)
 
 on the following platforms and operating systems:
 
@@ -208,6 +208,7 @@ We also have spaces built using WebAssembly. They are listed below:
 | Speaker identification                 | [Address][apk-sid]                 | [点此][apk-sid-cn]                |
 | Spoken language identification         | [Address][apk-slid]                | [点此][apk-slid-cn]               |
 | Keyword spotting                       | [Address][apk-kws]                 | [点此][apk-kws-cn]                |
+| Forced alignment                       | [Address][apk-fa]                  | [Address][apk-fa]                 |
 
 </details>
 
@@ -264,6 +265,7 @@ We also have spaces built using WebAssembly. They are listed below:
 | Speaker segmentation                        | [Address][speaker-segmentation-models]                                                |
 | Speech enhancement                          | [Address][speech-enhancement-models]                                                  |
 | Source separation                           | [Address][source-separation-models]                                                  |
+| Forced alignment                             | [Address][fa-models]                                                                 |
 
 </details>
 
@@ -324,6 +326,29 @@ for more models. The following table lists only **SOME** of them.
 
 </details>
 
+#### Some pre-trained forced-alignment models
+
+<details>
+
+Please see
+[scripts/mfa/README.md](https://github.com/k2-fsa/sherpa-onnx/blob/master/scripts/mfa/README.md)
+for how the models are packaged and used. The following table lists all of
+them. On Android, you can use the pre-built APKs in the
+[apk-fa](https://github.com/k2-fsa/sherpa-onnx/releases/tag/apk-fa) release;
+see
+[scripts/mfa/android.md](https://github.com/k2-fsa/sherpa-onnx/blob/master/scripts/mfa/android.md).
+
+|Name | Supported Languages| Description|
+|-----|-----|----|
+|[zh-aishell3-pinyin](https://github.com/k2-fsa/sherpa-onnx/releases/download/fa-models/zh-aishell3-pinyin.tar.bz2)| Chinese | Chinese MFA acoustic model trained on AISHELL-3, pinyin lexicon |
+|[zh-biaobei-pinyin](https://github.com/k2-fsa/sherpa-onnx/releases/download/fa-models/zh-biaobei-pinyin.tar.bz2)| Chinese | Chinese MFA acoustic model trained on the biaobei reading corpus, pinyin lexicon |
+|[zh-large-pinyin](https://github.com/k2-fsa/sherpa-onnx/releases/download/fa-models/zh-large-pinyin.tar.bz2)| Chinese | Chinese MFA acoustic model trained on AISHELL-3 + biaobei + more, pinyin lexicon |
+|[english-mfa-v2.2.1](https://github.com/k2-fsa/sherpa-onnx/releases/download/fa-models/english-mfa-v2.2.1.tar.bz2)| English | MFA `english_mfa` acoustic model v2.2.1, 100 phones, ~95k-word dictionary |
+|[english-mfa-v3.0.0](https://github.com/k2-fsa/sherpa-onnx/releases/download/fa-models/english-mfa-v3.0.0.tar.bz2)| English | MFA `english_mfa` acoustic model v3.0.0, 100 phones, ~95k-word dictionary |
+|[english-mfa-v3.1.0](https://github.com/k2-fsa/sherpa-onnx/releases/download/fa-models/english-mfa-v3.1.0.tar.bz2)| English | MFA `english_mfa` acoustic model v3.1.0, 100 phones, 42k-word core dictionary |
+
+</details>
+
 ### Useful links
 
 - Documentation: https://k2-fsa.github.io/sherpa/onnx/
@@ -337,6 +362,11 @@ for 新一代 Kaldi **微信交流群** and **QQ 交流群**.
 
 ## Projects using sherpa-onnx
 
+### [VocaRead](https://apps.apple.com/us/app/vocaread/id6757822401)
+
+> iOS app for reading EPUBs, PDFs, and documents aloud. It uses sherpa-onnx
+> to synthesize speech locally with Piper voices and can import books from OPDS catalogs.
+
 ### [Sherpa Voice / @siteed/sherpa-onnx.rn](https://github.com/deeeed/audiolab)
 
 > React Native wrapper and demo app for validating sherpa-onnx on iOS,
@@ -345,6 +375,10 @@ for 新一代 Kaldi **微信交流群** and **QQ 交流群**.
 
 - [NPM package](https://www.npmjs.com/package/@siteed/sherpa-onnx.rn)
 - [Live demo](https://deeeed.github.io/audiolab/sherpa-voice/)
+
+### [SmartVoice](https://github.com/dxhome/SmartVoice)
+
+> SmartVoice is a local speech application for speech recognition and text-to-speech. Its `smartvoice-auto` virtual model matches each request's task and language against an editable routing table, then dynamically routes it to the most suitable installed model. sherpa-onnx powers CPU inference; a web interface and HTTP API are included.
 
 ### [Speed of Sound](https://github.com/zugaldia/speedofsound)
 
@@ -369,6 +403,10 @@ for 新一代 Kaldi **微信交流群** and **QQ 交流群**.
 | <img src="https://raw.githubusercontent.com/CodeBySonu95/VoxSherpa-TTS/main/fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg" width="180"/> | <img src="https://raw.githubusercontent.com/CodeBySonu95/VoxSherpa-TTS/main/fastlane/metadata/android/en-US/images/phoneScreenshots/2.jpg" width="180"/> | <img src="https://raw.githubusercontent.com/CodeBySonu95/VoxSherpa-TTS/main/fastlane/metadata/android/en-US/images/phoneScreenshots/3.jpg" width="180"/> | <img src="https://raw.githubusercontent.com/CodeBySonu95/VoxSherpa-TTS/main/fastlane/metadata/android/en-US/images/phoneScreenshots/4.jpg" width="180"/> |
 
 </div>
+
+### [hyprvoice](https://github.com/mainliufeng/hyprvoice)
+
+> A voice-input tool for the Hyprland/Wayland desktop, written in C++ with GTK4. Press to talk or toggle recording, read the transcript in a non-focus-stealing layer-shell overlay, and paste the result into the active window. Streaming X-ASR transducers give live text, an offline transducer model refines it, and Silero VAD rejects silence. Recognition is local; an optional OpenAI-compatible endpoint handles correction, rewriting and translation.
 
 ---
 ### [BreezeApp](https://github.com/mtkresearch/BreezeApp) from [MediaTek Research](https://github.com/mtkresearch)
@@ -519,7 +557,7 @@ cross-platform Node.js microphone streaming library with prebuilt native binarie
 
 - [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=analytics-in-motion.wake-word)
 - [Open VSX](https://open-vsx.org/extension/analytics-in-motion/wake-word)
-- [decibri integration guides for sherpa-onnx](https://decibri.dev/docs/node/integrations/sherpa-onnx-stt.html)
+- [decibri integration guides for sherpa-onnx](https://decibri.dev/docs/integrations/stt/sherpa-onnx)
 
 ### [SmartSub](https://github.com/buxuku/SmartSub)
 
@@ -566,6 +604,28 @@ making it easy to match supported sherpa-onnx models to different hardware.
 > the app sleeps on idle but keeps the microphone open,
 > and the wake phrase brings the session back with no cloud calls.
 
+### [Suflyor](https://github.com/olerast67/voice-teleprompter-android)
+
+> An Android teleprompter that scrolls the script as you read it aloud. It runs
+> two streaming Zipformer models on the phone (Russian small-ru-vosk int8 and
+> English en-2023-06-26) and boosts the words of the script as hotwords with
+> modified beam search. A floating window shows the text over the camera app
+> while it records video.
+
+- [Download APK](https://github.com/olerast67/voice-teleprompter-android/releases/latest)
+- [Website](https://olerast67.github.io/voice-teleprompter-android/)
+- Android 10+ · no internet permission · GPL-3.0
+
+### [Loud Caption](https://github.com/DR1N0/loud-caption)
+
+> An open-source Flutter app for Android that turns nearby speech into large,
+> high-contrast captions for people with hearing loss. SenseVoice ASR and Silero
+> VAD run fully on-device through sherpa-onnx's Dart API; translation is
+> optional and also local. No account, analytics, or cloud audio.
+
+- [Download APK](https://github.com/DR1N0/loud-caption/releases/latest)
+- Android 8.0+ · arm64-v8a · MIT (app code)
+
 ### [Recly](https://github.com/rokrokss/recly)
 
 > An open-source recorder for Galaxy Watch, Android, Apple Watch, iPhone, macOS,
@@ -575,23 +635,88 @@ making it easy to match supported sherpa-onnx models to different hardware.
 > splits each recording into speech segments, and sherpa-onnx's INT8 export of
 > Qwen3-ASR 0.6B transcribes them. The ~1 GB model is downloaded on demand.
 
-### China Unicom 中国联通安卓 App
-
-> The Android App (version `>= 12.14.1 (2026.07.28)`) uses `sherpa-onnx` Kotlin API for keyword spotting.
-
-<img width="800" alt="APK lib screenshot showing only armeabi-v7a" src="https://github.com/user-attachments/assets/a9ce9731-1ec7-4975-a62e-2dd44b8f3bfe" />
-
-### China Life 中国人寿 App
-
-> The Android App (version `>= 3.5.46 (2026.03.23)`) uses `sherpa-onnx` Kotlin API for keyword spotting.
-
-<img width="800" alt="APK lib screenshot" src="https://github.com/user-attachments/assets/0d9d8021-f908-4659-993f-95b5c789d5c6" />
-
 ### [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)
 
 > It [uses](https://github.com/deepseek-ai/deepseek-harness/commit/47ae64ee68b416cc0aa78891892ae9e9be6590c5)
 > the JavaScript npm package [sherpa-onnx-node][sherpa-onnx-node] with [SenseVoice](https://k2-fsa.github.io/sherpa/onnx/sense-voice/pretrained.html#sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17-int8-chinese-english-japanese-korean-cantonese)
 for local speech recognition.
+
+### [akou](https://github.com/GeiserX/akou)
+
+> An open-source (GPL-3.0-or-later) call and meeting recorder for macOS that transcribes
+> on the machine. It records the microphone and the call audio on two channels,
+> shows a live transcript, and lets a terminal agent such as Claude Code or Codex
+> follow and question the call over MCP. The same core runs as a self-hosted
+> transcription server in Docker.
+
+It runs [sherpa-onnx-node][sherpa-onnx-node] in a Bun Worker: [silero-vad][silero-vad]
+splits each channel into speech segments, Parakeet TDT 0.6B v3 (`OfflineRecognizer`)
+or streaming Nemotron (`OnlineRecognizer`) writes the live transcript, and TitaNet
+embeddings (`SpeakerEmbeddingExtractor`) help tell the speakers on the call apart.
+After the call, Parakeet is the fast engine of the final pass and one of the
+engines of the fused pass. The larger Qwen3-ASR model runs outside sherpa-onnx, on
+llama-server.
+
+### [bot-reborn](https://github.com/beasaltfish/bot-reborn)
+
+> A $4 toy robot driven by an old Android phone, all from one web page in Chrome.
+> sherpa-onnx runs in the page as WebAssembly: Silero VAD decides when someone is
+> actually talking, so only real speech is sent to STT, and an optional keyword
+> spotter (`sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20`) handles the wake word.
+> Both run from one combined build, with the VAD symbols exported from the KWS
+> WebAssembly target.
+
+- [Build write-up](https://agentlenshq.com/maker/four-dollar-robot)
+- [Live page](https://bot-reborn.agentlenshq.com) (Chrome on Android)
+
+### [Voltip](https://github.com/sunerpy/voltip)
+
+> An open-source (AGPL-3.0) push-to-talk dictation app for Windows, macOS, Linux
+> and Android: hold a hotkey, speak, and the text is inserted at the cursor in
+> the focused app. The desktop app uses the sherpa-onnx Rust crate for on-device
+> recognition with SenseVoice and Paraformer, a streaming Zipformer for the live
+> preview while the user speaks, and Silero VAD to trim silence and to split
+> recordings of up to two hours at pauses. Models are downloaded on demand.
+
+- [Website](https://voltip.firlab.app)
+- [Releases](https://github.com/sunerpy/voltip/releases)
+
+### [Outmake](https://outmake.app)
+
+> A free Mac app (Apple silicon, macOS 26) for running open models on the Mac itself.
+> Its Kokoro, Kitten, Piper and Supertonic voices run on sherpa-onnx: the app downloads
+> the osx-arm64 shared build and speaks through `sherpa-onnx-offline-tts`, so those
+> voices need no Python.
+
+- [Credits, where sherpa-onnx is listed](https://outmake.app/credits)
+
+### [BAXY](https://github.com/REDSOULTM/BAXY)
+
+> A voice and text assistant that operates a Windows PC locally, in English and Spanish.
+> It uses sherpa-onnx for speech recognition with Parakeet and for its Supertonic voice.
+
+- [Website](https://baxy.app)
+- [Releases](https://github.com/REDSOULTM/BAXY/releases)
+
+### [Tomoru](https://github.com/ACAne0320/Tomoru)
+
+> Open-source desktop app for real-time bilingual subtitles and screen text translation for streams, anime, games, and meetings.
+> It uses sherpa-onnx for local, offline speech recognition with SenseVoice and voice activity detection with Silero VAD.
+
+- [Website](https://tomoru.acane.dev)
+- [Releases](https://github.com/ACAne0320/Tomoru/releases)
+
+### [ambivox](https://github.com/whispem/ambivox)
+
+> A self-hosted voice call app with live translation. Two people open a web page
+> on the same server, each picks a language, and each hears the other in theirs,
+> with live captions on both sides. English, French, Spanish and Italian.
+> No audio leaves the machine.
+
+It uses the C API of sherpa-onnx (`SherpaOnnxOfflineTts`) with Piper VITS voices to speak the translated text, next to whisper.cpp for recognition and [sussurro.cpp](https://github.com/whispem/sussurro.cpp) for translation.
+
+- [Releases](https://github.com/whispem/ambivox/releases)
+- Docker images for x86-64 and arm64 · MIT
 
 [sherpa-onnx-node]: https://www.npmjs.com/package/sherpa-onnx-node
 [silero-vad]: https://github.com/snakers4/silero-vad
@@ -602,22 +727,22 @@ for local speech recognition.
 [旭日X3派]: https://developer.horizon.ai/api/v1/fileData/documents_pi/index.html
 [爱芯派]: https://wiki.sipeed.com/hardware/zh/maixIII/ax-pi/axpi.html
 [hf-space-speaker-diarization]: https://huggingface.co/spaces/k2-fsa/speaker-diarization
-[hf-space-speaker-diarization-cn]: https://hf.qhduan.com/spaces/k2-fsa/speaker-diarization
+[hf-space-speaker-diarization-cn]: https://hf-mirror.com/spaces/k2-fsa/speaker-diarization
 [hf-space-asr]: https://huggingface.co/spaces/k2-fsa/automatic-speech-recognition
-[hf-space-asr-cn]: https://hf.qhduan.com/spaces/k2-fsa/automatic-speech-recognition
+[hf-space-asr-cn]: https://hf-mirror.com/spaces/k2-fsa/automatic-speech-recognition
 [Whisper]: https://github.com/openai/whisper
 [hf-space-asr-whisper]: https://huggingface.co/spaces/k2-fsa/automatic-speech-recognition-with-whisper
-[hf-space-asr-whisper-cn]: https://hf.qhduan.com/spaces/k2-fsa/automatic-speech-recognition-with-whisper
+[hf-space-asr-whisper-cn]: https://hf-mirror.com/spaces/k2-fsa/automatic-speech-recognition-with-whisper
 [hf-space-tts]: https://huggingface.co/spaces/k2-fsa/text-to-speech
-[hf-space-tts-cn]: https://hf.qhduan.com/spaces/k2-fsa/text-to-speech
+[hf-space-tts-cn]: https://hf-mirror.com/spaces/k2-fsa/text-to-speech
 [hf-space-subtitle]: https://huggingface.co/spaces/k2-fsa/generate-subtitles-for-videos
-[hf-space-subtitle-cn]: https://hf.qhduan.com/spaces/k2-fsa/generate-subtitles-for-videos
+[hf-space-subtitle-cn]: https://hf-mirror.com/spaces/k2-fsa/generate-subtitles-for-videos
 [hf-space-audio-tagging]: https://huggingface.co/spaces/k2-fsa/audio-tagging
-[hf-space-audio-tagging-cn]: https://hf.qhduan.com/spaces/k2-fsa/audio-tagging
+[hf-space-audio-tagging-cn]: https://hf-mirror.com/spaces/k2-fsa/audio-tagging
 [hf-space-source-separation]: https://huggingface.co/spaces/k2-fsa/source-separation
-[hf-space-source-separation-cn]: https://hf.qhduan.com/spaces/k2-fsa/source-separation
+[hf-space-source-separation-cn]: https://hf-mirror.com/spaces/k2-fsa/source-separation
 [hf-space-slid-whisper]: https://huggingface.co/spaces/k2-fsa/spoken-language-identification
-[hf-space-slid-whisper-cn]: https://hf.qhduan.com/spaces/k2-fsa/spoken-language-identification
+[hf-space-slid-whisper-cn]: https://hf-mirror.com/spaces/k2-fsa/spoken-language-identification
 [wasm-hf-vad]: https://huggingface.co/spaces/k2-fsa/web-assembly-vad-sherpa-onnx
 [wasm-ms-vad]: https://modelscope.cn/studios/csukuangfj/web-assembly-vad-sherpa-onnx
 [wasm-hf-streaming-asr-zh-en-zipformer]: https://huggingface.co/spaces/k2-fsa/web-assembly-asr-sherpa-onnx-zh-en
@@ -699,6 +824,7 @@ for local speech recognition.
 [apk-slid-cn]: https://k2-fsa.github.io/sherpa/onnx/spoken-language-identification/apk-cn.html
 [apk-kws]: https://k2-fsa.github.io/sherpa/onnx/kws/apk.html
 [apk-kws-cn]: https://k2-fsa.github.io/sherpa/onnx/kws/apk-cn.html
+[apk-fa]: https://github.com/k2-fsa/sherpa-onnx/releases/tag/apk-fa
 [apk-flutter-streaming-asr]: https://k2-fsa.github.io/sherpa/onnx/flutter/pre-built-app.html#streaming-speech-recognition-stt-asr
 [apk-flutter-streaming-asr-cn]: https://k2-fsa.github.io/sherpa/onnx/flutter/pre-built-app.html#streaming-speech-recognition-stt-asr
 [flutter-tts-android]: https://k2-fsa.github.io/sherpa/onnx/flutter/tts-android.html
@@ -744,6 +870,7 @@ for local speech recognition.
 [NVIDIA Jetson Nano B01]: https://www.seeedstudio.com/blog/2020/01/16/new-revision-of-jetson-nano-dev-kit-now-supports-new-jetson-nano-module/
 [speech-enhancement-models]: https://github.com/k2-fsa/sherpa-onnx/releases/tag/speech-enhancement-models
 [source-separation-models]: https://github.com/k2-fsa/sherpa-onnx/releases/tag/source-separation-models
+[fa-models]: https://github.com/k2-fsa/sherpa-onnx/releases/tag/fa-models
 [RK3588]: https://www.rock-chips.com/uploads/pdf/2022.8.26/192/RK3588%20Brief%20Datasheet.pdf
 [spleeter]: https://github.com/deezer/spleeter
 [UVR]: https://github.com/Anjok07/ultimatevocalremovergui

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -104,9 +105,26 @@ class OfflineSpeakerDiarizationPyannoteImpl
       const float *audio, int32_t n,
       OfflineSpeakerDiarizationProgressCallback callback = nullptr,
       void *callback_arg = nullptr) const override {
+    OfflineStream stream(SpeakerDiarizationTag{SampleRate()});
+    if (n > 0) {
+      stream.AcceptWaveform(SampleRate(), audio, n);
+    }
+    return Process(&stream, std::move(callback), callback_arg);
+  }
+
+  OfflineSpeakerDiarizationResult Process(
+      const OfflineStream *stream,
+      OfflineSpeakerDiarizationProgressCallback callback = nullptr,
+      void *callback_arg = nullptr) const override {
+    Options opts = GetOptions(*stream);
+    std::vector<float> samples = stream->GetFrames();
+    const float *audio = samples.data();
+    int32_t n = static_cast<int32_t>(samples.size());
+
     Timer total_timer(config_.segmentation.debug);
     Timer segmentation_timer(config_.segmentation.debug);
-    std::vector<Matrix2D> segmentations = RunSpeakerSegmentationModel(audio, n);
+    std::vector<Matrix2D> segmentations =
+        RunSpeakerSegmentationModel(audio, n, opts.window_shift);
     // segmentations[i] is for chunk_i
     // Each matrix is of shape (num_frames, num_powerset_classes)
     if (segmentations.empty()) {
@@ -130,7 +148,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
       }
 
       OfflineSpeakerDiarizationResult result =
-          HandleOneChunkSpecialCase(labels[0], n);
+          HandleOneChunkSpecialCase(labels[0], n, opts);
 
       if (config_.segmentation.debug) {
         LogTotal(static_cast<float>(total_timer.Elapsed()), n);
@@ -142,7 +160,8 @@ class OfflineSpeakerDiarizationPyannoteImpl
     // labels[i] is a 0-1 matrix of shape (num_frames, num_speakers)
 
     // speaker count per frame
-    Int32RowVector speakers_per_frame = ComputeSpeakersPerFrame(labels);
+    Int32RowVector speakers_per_frame =
+        ComputeSpeakersPerFrame(labels, opts.window_shift);
 
     if (speakers_per_frame.maxCoeff() == 0) {
       if (config_.segmentation.debug) {
@@ -152,7 +171,8 @@ class OfflineSpeakerDiarizationPyannoteImpl
       return {};
     }
 
-    auto chunk_speaker_samples_list_pair = GetChunkSpeakerSampleIndexes(labels);
+    auto chunk_speaker_samples_list_pair =
+        GetChunkSpeakerSampleIndexes(labels, opts.window_shift);
 
     // The embedding model may output NaN. valid_indexes contains indexes
     // in chunk_speaker_samples_list_pair.second that don't lead to
@@ -173,11 +193,9 @@ class OfflineSpeakerDiarizationPyannoteImpl
       chunk_speaker_pair.reserve(valid_indexes.size());
       sample_indexes.reserve(valid_indexes.size());
       for (auto i : valid_indexes) {
-        if (i < 0 ||
-            i >= static_cast<int32_t>(
-                     chunk_speaker_samples_list_pair.first.size())) {
-          SHERPA_ONNX_LOGE("valid_indexes: index %d out of range [0, %d)",
-                           i,
+        if (i < 0 || i >= static_cast<int32_t>(
+                              chunk_speaker_samples_list_pair.first.size())) {
+          SHERPA_ONNX_LOGE("valid_indexes: index %d out of range [0, %d)", i,
                            static_cast<int32_t>(
                                chunk_speaker_samples_list_pair.first.size()));
           continue;
@@ -193,8 +211,9 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
     Timer clustering_timer(config_.segmentation.debug);
     std::vector<float> silhouettes;
-    std::vector<int32_t> cluster_labels = clustering_->Cluster(
-        &embeddings(0, 0), embeddings.rows(), embeddings.cols(),
+    std::vector<int32_t> cluster_labels = ClusterEmbeddings(
+        &embeddings, chunk_speaker_samples_list_pair.second, n,
+        opts.min_active_ratio,
         config_.clustering.compute_confidence ? &silhouettes : nullptr);
     clustering_timer.Log("OfflineSpeakerDiarization: clustering");
 
@@ -215,7 +234,8 @@ class OfflineSpeakerDiarizationPyannoteImpl
     auto new_labels =
         ReLabel(labels, max_cluster_index, chunk_speaker_to_cluster);
 
-    Matrix2DInt32 speaker_count = ComputeSpeakerCount(new_labels, n);
+    Matrix2DInt32 speaker_count =
+        ComputeSpeakerCount(new_labels, n, opts.window_shift);
 
     Matrix2DInt32 final_labels =
         FinalizeLabels(speaker_count, speakers_per_frame);
@@ -230,7 +250,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
           chunk_speaker_samples_list_pair.second, cluster_labels, silhouettes);
     }
 
-    auto result = ComputeResult(final_labels, cluster_intervals);
+    auto result = ComputeResult(final_labels, opts, cluster_intervals);
 
     if (config_.segmentation.debug) {
       LogTotal(static_cast<float>(total_timer.Elapsed()), n);
@@ -240,6 +260,60 @@ class OfflineSpeakerDiarizationPyannoteImpl
   }
 
  private:
+  struct Options {
+    float min_active_ratio;
+    float min_duration_on;
+    float min_duration_off;
+    int32_t window_shift;
+  };
+
+  // The checks are written so that NaN, which fails every comparison, is
+  // rejected too
+  Options GetOptions(const OfflineStream &stream) const {
+    Options opts;
+
+    opts.min_active_ratio =
+        stream.GetOptionFloat("min_active_ratio", kMinActiveRatio);
+    if (!(opts.min_active_ratio >= 0 && opts.min_active_ratio <= 1)) {
+      SHERPA_ONNX_LOGE("min_active_ratio %f is not in [0, 1]. Use %.1f",
+                       opts.min_active_ratio, kMinActiveRatio);
+      opts.min_active_ratio = kMinActiveRatio;
+    }
+
+    opts.min_duration_on =
+        stream.GetOptionFloat("min_duration_on", config_.min_duration_on);
+    if (!(opts.min_duration_on >= 0)) {
+      SHERPA_ONNX_LOGE("min_duration_on %f is not >= 0. Use %.3f",
+                       opts.min_duration_on, config_.min_duration_on);
+      opts.min_duration_on = config_.min_duration_on;
+    }
+
+    opts.min_duration_off =
+        stream.GetOptionFloat("min_duration_off", config_.min_duration_off);
+    if (!(opts.min_duration_off >= 0)) {
+      SHERPA_ONNX_LOGE("min_duration_off %f is not >= 0. Use %.3f",
+                       opts.min_duration_off, config_.min_duration_off);
+      opts.min_duration_off = config_.min_duration_off;
+    }
+
+    const auto &meta_data = segmentation_model_.GetModelMetaData();
+    opts.window_shift = meta_data.window_shift;
+    if (stream.HasOption("window_shift_ratio")) {
+      float ratio = stream.GetOptionFloat("window_shift_ratio", 0);
+      if (ratio > 0 && ratio <= 1) {
+        opts.window_shift =
+            std::max(1, static_cast<int32_t>(static_cast<double>(ratio) *
+                                             meta_data.window_size));
+      } else {
+        SHERPA_ONNX_LOGE("window_shift_ratio %f is not in (0, 1]. Use %.3f",
+                         ratio,
+                         config_.segmentation.pyannote.window_shift_ratio);
+      }
+    }
+
+    return opts;
+  }
+
   void LogTotal(float total_seconds, int32_t num_samples) const {
     float audio_duration = static_cast<float>(num_samples) / SampleRate();
 
@@ -294,13 +368,12 @@ class OfflineSpeakerDiarizationPyannoteImpl
     }
   }
 
-  std::vector<Matrix2D> RunSpeakerSegmentationModel(const float *audio,
-                                                    int32_t n) const {
+  std::vector<Matrix2D> RunSpeakerSegmentationModel(
+      const float *audio, int32_t n, int32_t window_shift) const {
     std::vector<Matrix2D> ans;
 
     const auto &meta_data = segmentation_model_.GetModelMetaData();
     int32_t window_size = meta_data.window_size;
-    int32_t window_shift = meta_data.window_shift;
 
     if (n <= 0) {
 #if __OHOS__
@@ -380,7 +453,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     int32_t num_rows = m.rows();
     Matrix2DInt32 ans(num_rows, powerset_mapping_.cols());
 
-    std::ptrdiff_t col_id;
+    std::ptrdiff_t col_id = 0;
 
     for (int32_t i = 0; i != num_rows; ++i) {
       m.row(i).maxCoeff(&col_id);
@@ -393,10 +466,9 @@ class OfflineSpeakerDiarizationPyannoteImpl
   // See also
   // https://github.com/pyannote/pyannote-audio/blob/develop/pyannote/audio/pipelines/utils/diarization.py#L122
   Int32RowVector ComputeSpeakersPerFrame(
-      const std::vector<Matrix2DInt32> &labels) const {
+      const std::vector<Matrix2DInt32> &labels, int32_t window_shift) const {
     const auto &meta_data = segmentation_model_.GetModelMetaData();
     int32_t window_size = meta_data.window_size;
-    int32_t window_shift = meta_data.window_shift;
     int32_t receptive_field_shift = meta_data.receptive_field_shift;
 
     int32_t num_chunks = labels.size();
@@ -411,8 +483,8 @@ class OfflineSpeakerDiarizationPyannoteImpl
     weight.setZero();
 
     for (int32_t i = 0; i != num_chunks; ++i) {
-      int32_t start =
-          static_cast<float>(i) * window_shift / receptive_field_shift + 0.5;
+      int32_t start = static_cast<int32_t>(std::lround(
+          static_cast<float>(i) * window_shift / receptive_field_shift));
 
       auto seq = Eigen::seqN(start, labels[i].rows());
 
@@ -429,7 +501,8 @@ class OfflineSpeakerDiarizationPyannoteImpl
   //
   // ans.first[i] corresponds to ans.second[i]
   std::pair<std::vector<Int32Pair>, std::vector<std::vector<Int32Pair>>>
-  GetChunkSpeakerSampleIndexes(const std::vector<Matrix2DInt32> &labels) const {
+  GetChunkSpeakerSampleIndexes(const std::vector<Matrix2DInt32> &labels,
+                               int32_t window_shift) const {
     auto new_labels = ExcludeOverlap(labels);
 
     std::vector<Int32Pair> chunk_speaker_list;
@@ -437,7 +510,6 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
     const auto &meta_data = segmentation_model_.GetModelMetaData();
     int32_t window_size = meta_data.window_size;
-    int32_t window_shift = meta_data.window_shift;
     int32_t receptive_field_shift = meta_data.receptive_field_shift;
     int32_t num_speakers = meta_data.num_speakers;
 
@@ -461,7 +533,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
         std::vector<Int32Pair> this_speaker_samples;
 
         bool is_active = false;
-        int32_t start_index;
+        int32_t start_index = 0;
 
         for (int32_t k = 0; k != num_frames; ++k) {
           if (d[k] != 0) {
@@ -589,6 +661,92 @@ class OfflineSpeakerDiarizationPyannoteImpl
     return ans;
   }
 
+  // An embedding computed from little clean speech is not reliable, and a few
+  // of them can take a whole cluster. As in pyannote, we cluster only the
+  // embeddings with at least min_active_ratio of the window as clean speech,
+  // and then assign each of the others to the closest cluster centroid.
+  std::vector<int32_t> ClusterEmbeddings(
+      Matrix2D *embeddings,
+      const std::vector<std::vector<Int32Pair>> &sample_indexes, int32_t n,
+      float min_active_ratio, std::vector<float> *silhouettes) const {
+    const auto &meta_data = segmentation_model_.GetModelMetaData();
+    int32_t min_samples = min_active_ratio * meta_data.window_size;
+    int32_t num_rows = embeddings->rows();
+
+    std::vector<int32_t> keep;
+    for (int32_t i = 0; i != num_rows; ++i) {
+      int32_t num_samples = 0;
+      for (const auto &p : sample_indexes[i]) {
+        num_samples += std::max(0, std::min(p.second, n) - p.first);
+      }
+
+      if (num_samples >= min_samples) {
+        keep.push_back(i);
+      }
+    }
+
+    int32_t num_keep = keep.size();
+    if (num_keep == num_rows ||
+        num_keep <= std::max(2, config_.clustering.num_clusters)) {
+      return clustering_->Cluster(embeddings->data(), num_rows,
+                                  embeddings->cols(), silhouettes);
+    }
+
+    embeddings->rowwise().normalize();
+
+    Matrix2D kept(num_keep, embeddings->cols());
+    for (int32_t i = 0; i != num_keep; ++i) {
+      kept.row(i) = embeddings->row(keep[i]);
+    }
+
+    std::vector<float> kept_silhouettes;
+    std::vector<int32_t> kept_labels =
+        clustering_->Cluster(kept.data(), kept.rows(), kept.cols(),
+                             silhouettes ? &kept_silhouettes : nullptr);
+
+    int32_t num_clusters =
+        *std::max_element(kept_labels.begin(), kept_labels.end()) + 1;
+    Matrix2D sums = Matrix2D::Zero(num_clusters, kept.cols());
+    FloatRowVector counts = FloatRowVector::Zero(num_clusters);
+    for (int32_t i = 0; i != num_keep; ++i) {
+      sums.row(kept_labels[i]) += kept.row(i);
+      counts[kept_labels[i]] += 1;
+    }
+
+    Matrix2D similarity =
+        (*embeddings) * sums.rowwise().normalized().transpose();
+
+    std::vector<int32_t> labels(num_rows);
+    for (int32_t i = 0; i != num_rows; ++i) {
+      similarity.row(i).maxCoeff(&labels[i]);
+    }
+
+    if (silhouettes) {
+      // Mean cosine distance from each embedding to each cluster
+      Matrix2D distance =
+          1 - (((*embeddings) * sums.transpose()).array().rowwise() /
+               counts.array());
+
+      silhouettes->assign(num_rows, kSilhouetteUnavailable);
+      for (int32_t i = 0; num_clusters > 1 && i != num_rows; ++i) {
+        float a = distance(i, labels[i]);
+        distance(i, labels[i]) = std::numeric_limits<float>::infinity();
+        float b = distance.row(i).minCoeff();
+        float denom = std::max(a, b);
+        (*silhouettes)[i] = denom > 0 ? (b - a) / denom : 0;
+      }
+    }
+
+    for (int32_t i = 0; i != num_keep; ++i) {
+      labels[keep[i]] = kept_labels[i];
+      if (silhouettes) {
+        (*silhouettes)[keep[i]] = kept_silhouettes[i];
+      }
+    }
+
+    return labels;
+  }
+
   std::unordered_map<Int32Pair, int32_t, PairHash> ConvertChunkSpeakerToCluster(
       const std::vector<Int32Pair> &chunk_speaker_pair,
       const std::vector<int32_t> &cluster_labels) const {
@@ -632,12 +790,10 @@ class OfflineSpeakerDiarizationPyannoteImpl
         int32_t new_speaker_index =
             chunk_speaker_to_cluster.at({chunk_index, speaker_index});
 
-        if (new_speaker_index < 0 ||
-            new_speaker_index >= new_label.cols()) {
+        if (new_speaker_index < 0 || new_speaker_index >= new_label.cols()) {
           SHERPA_ONNX_LOGE(
               "ReLabel: new_speaker_index %d out of range [0, %d), skipping",
-              new_speaker_index,
-              static_cast<int32_t>(new_label.cols()));
+              new_speaker_index, static_cast<int32_t>(new_label.cols()));
           continue;
         }
 
@@ -657,10 +813,10 @@ class OfflineSpeakerDiarizationPyannoteImpl
   }
 
   Matrix2DInt32 ComputeSpeakerCount(const std::vector<Matrix2DInt32> &labels,
-                                    int32_t num_samples) const {
+                                    int32_t num_samples,
+                                    int32_t window_shift) const {
     const auto &meta_data = segmentation_model_.GetModelMetaData();
     int32_t window_size = meta_data.window_size;
-    int32_t window_shift = meta_data.window_shift;
     int32_t receptive_field_shift = meta_data.receptive_field_shift;
 
     int32_t num_chunks = labels.size();
@@ -673,8 +829,8 @@ class OfflineSpeakerDiarizationPyannoteImpl
     count.setZero();
 
     for (int32_t i = 0; i != num_chunks; ++i) {
-      int32_t start =
-          static_cast<float>(i) * window_shift / receptive_field_shift + 0.5;
+      int32_t start = static_cast<int32_t>(std::lround(
+          static_cast<float>(i) * window_shift / receptive_field_shift));
 
       auto seq = Eigen::seqN(start, labels[i].rows());
 
@@ -720,7 +876,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
   }
 
   OfflineSpeakerDiarizationResult ComputeResult(
-      const Matrix2DInt32 &final_labels,
+      const Matrix2DInt32 &final_labels, const Options &opts,
       const std::unordered_map<int32_t, std::vector<SilhouetteInterval>>
           &cluster_intervals = {}) const {
     Matrix2DInt32 final_labels_t = final_labels.transpose();
@@ -728,8 +884,6 @@ class OfflineSpeakerDiarizationPyannoteImpl
     int32_t num_frames = final_labels_t.cols();
 
     const auto &meta_data = segmentation_model_.GetModelMetaData();
-    int32_t window_size = meta_data.window_size;
-    int32_t window_shift = meta_data.window_shift;
     int32_t receptive_field_shift = meta_data.receptive_field_shift;
     int32_t receptive_field_size = meta_data.receptive_field_size;
     int32_t sample_rate = meta_data.sample_rate;
@@ -774,17 +928,17 @@ class OfflineSpeakerDiarizationPyannoteImpl
       }
 
       // merge segments if the gap between them is less than min_duration_off
-      MergeSegments(&this_speaker);
+      MergeSegments(&this_speaker, opts.min_duration_off);
 
       // Add the per-segment confidence (if it was at all computed).
       auto cluster_it = cluster_intervals.find(speaker_index);
       bool has_intervals = cluster_it != cluster_intervals.end();
 
       for (auto &seg : this_speaker) {
-        if (seg.Duration() > config_.min_duration_on) {
+        if (seg.Duration() > opts.min_duration_on) {
           if (has_intervals) {
-            seg.SetConfidence(ComputeSegmentConfidence(cluster_it->second, seg,
-                                                       sample_rate));
+            seg.SetConfidence(
+                ComputeSegmentConfidence(cluster_it->second, seg, sample_rate));
           }
           ans.Add(seg);
         }
@@ -839,15 +993,15 @@ class OfflineSpeakerDiarizationPyannoteImpl
   }
 
   OfflineSpeakerDiarizationResult HandleOneChunkSpecialCase(
-      const Matrix2DInt32 &final_labels, int32_t num_samples) const {
+      const Matrix2DInt32 &final_labels, int32_t num_samples,
+      const Options &opts) const {
     const auto &meta_data = segmentation_model_.GetModelMetaData();
     int32_t window_size = meta_data.window_size;
-    int32_t window_shift = meta_data.window_shift;
     int32_t receptive_field_shift = meta_data.receptive_field_shift;
 
-    bool has_last_chunk = (num_samples - window_size) % window_shift > 0;
+    bool has_last_chunk = (num_samples - window_size) % opts.window_shift > 0;
     if (!has_last_chunk) {
-      return ComputeResult(final_labels);
+      return ComputeResult(final_labels, opts);
     }
 
     int32_t num_frames = final_labels.rows();
@@ -856,13 +1010,13 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
     int32_t num_frames_to_keep = std::min(new_num_frames, num_frames);
 
-    return ComputeResult(
-        final_labels(Eigen::seqN(0, num_frames_to_keep), Eigen::placeholders::all));
+    return ComputeResult(final_labels(Eigen::seqN(0, num_frames_to_keep),
+                                      Eigen::placeholders::all),
+                         opts);
   }
 
-  void MergeSegments(
-      std::vector<OfflineSpeakerDiarizationSegment> *segments) const {
-    float min_duration_off = config_.min_duration_off;
+  void MergeSegments(std::vector<OfflineSpeakerDiarizationSegment> *segments,
+                     float min_duration_off) const {
     bool changed = true;
     while (changed) {
       changed = false;
@@ -880,6 +1034,8 @@ class OfflineSpeakerDiarizationPyannoteImpl
   }
 
  private:
+  static constexpr float kMinActiveRatio = 0.2;
+
   OfflineSpeakerDiarizationConfig config_;
   OfflineSpeakerSegmentationPyannoteModel segmentation_model_;
   SpeakerEmbeddingExtractor embedding_extractor_;

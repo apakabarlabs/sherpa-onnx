@@ -80,10 +80,6 @@ jobs:
                 -DSHERPA_ONNX_ENABLE_TTS=ON \
                 -DSHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION=ON \
                 -DSHERPA_ONNX_ENABLE_BINARY=ON \
-                -DBUILD_PIPER_PHONMIZE_EXE=OFF \
-                -DBUILD_PIPER_PHONMIZE_TESTS=OFF \
-                -DBUILD_ESPEAK_NG_EXE=OFF \
-                -DBUILD_ESPEAK_NG_TESTS=OFF \
                 -DSHERPA_ONNX_ENABLE_PYTHON=OFF \
                 -DSHERPA_ONNX_ENABLE_TESTS=OFF \
                 -DSHERPA_ONNX_ENABLE_CHECK=OFF \
@@ -93,7 +89,7 @@ jobs:
                 -DSHERPA_ONNX_LINK_LIBSTDCPP_STATICALLY=OFF \
                 ..
 
-              make -j$(nproc) install
+              make -j1 install
 
               echo "=== Fix RPATH ==="
               rm -fv ./install/lib/libonnxruntime4j_jni.so
@@ -115,7 +111,6 @@ jobs:
               cp -v ./install/lib/lib*.so ../scripts/wheel/sherpa-onnx-core/sherpa_onnx/lib
               mkdir -p ../scripts/wheel/sherpa-onnx-core/sherpa_onnx/include/sherpa-onnx/c-api
               cp -v ./install/include/sherpa-onnx/c-api/*.h ../scripts/wheel/sherpa-onnx-core/sherpa_onnx/include/sherpa-onnx/c-api
-              rm -fv ../scripts/wheel/sherpa-onnx-core/sherpa_onnx/lib/libcargs.so
               rm -fv ../scripts/wheel/sherpa-onnx-core/sherpa_onnx/lib/libonnxruntime4j_jni.so
 
               pushd ../scripts/wheel/sherpa-onnx-core
@@ -206,6 +201,12 @@ jobs:
               echo "RPATH: $RPATH"
 
               cd /k2-fsa/sherpa-onnx
+              # Parallel make fails intermittently in the emulated 32-bit
+              # Termux container: the jobserver pipe breaks ("duping jobs
+              # pipe: Bad file descriptor") and child compilers die silently.
+              # -j1 runs without a jobserver and is reliable.
+              # See runs 45013334934 and 45020154515.
+              export SHERPA_ONNX_MAKE_ARGS=-j1
               SHERPA_ONNX_SPLIT_PYTHON_PACKAGE=ON python3 setup.py bdist_wheel --plat-name android_24_armeabi_v7a
               ls -lh dist
 

@@ -65,6 +65,15 @@ class OfflineStream::Impl {
 
       opts_.mel_opts.is_librosa = config.is_librosa;
 
+      // NeMo mel preprocessing uses an additive log-zero guard,
+      // log(x + FLT_EPSILON / 2) (2**-24), while knf defaults to the hard
+      // floor log(max(x, FLT_EPSILON)). Select the additive guard with
+      // NeMo's value so the extracted features match NeMo directly.
+      if (!config_.nemo_normalize_type.empty()) {
+        opts_.use_log_floor = false;
+        opts_.eps = std::numeric_limits<float>::epsilon() / 2;
+      }
+
       fbank_ = std::make_unique<knf::OnlineFbank>(opts_);
     }
   }
@@ -116,15 +125,30 @@ class OfflineStream::Impl {
     fbank_ = std::make_unique<knf::OnlineFbank>(opts_);
   }
 
-  explicit Impl(MoonshineTag /*tag*/) : is_moonshine_(true) {
+  explicit Impl(MoonshineTag /*tag*/) : keep_samples_(true) {
     config_.sampling_rate = 16000;
   }
 
-  explicit Impl(OmnilingualAsrTag /*tag*/) : is_omnilingual_asr_(true) {
+  explicit Impl(OmnilingualAsrTag /*tag*/) : keep_samples_(true) {
     config_.sampling_rate = 16000;
+  }
+
+  explicit Impl(SpeakerDiarizationTag tag) : keep_samples_(true) {
+    config_.sampling_rate = tag.sample_rate;
+  }
+
+  explicit Impl(const FaFeatureConfig &config) {
+    // Forced-alignment stream. The extractor handles the kaldi int16
+    // scaling and resampling itself.
+    fa_ = std::make_unique<FaFeatureExtractor>(config);
+    config_.sampling_rate = config.sample_frequency;
   }
 
   void AcceptWaveform(int32_t sampling_rate, const float *waveform, int32_t n) {
+    if (fa_) {
+      fa_->AcceptWaveform(sampling_rate, waveform, n);
+      return;
+    }
     if (config_.normalize_samples) {
       AcceptWaveformImpl(sampling_rate, waveform, n);
     } else {
@@ -155,7 +179,7 @@ class OfflineStream::Impl {
       std::vector<float> samples;
       resampler->Resample(waveform, n, true, &samples);
 
-      if (is_moonshine_ || is_omnilingual_asr_) {
+      if (keep_samples_) {
         samples_.insert(samples_.end(), samples.begin(), samples.end());
       } else if (fbank_) {
         fbank_->AcceptWaveform(config_.sampling_rate, samples.data(),
@@ -172,7 +196,7 @@ class OfflineStream::Impl {
       return;
     }  // if (sampling_rate != config_.sampling_rate)
 
-    if (is_moonshine_ || is_omnilingual_asr_) {
+    if (keep_samples_) {
       samples_.insert(samples_.end(), waveform, waveform + n);
     } else if (fbank_) {
       fbank_->AcceptWaveform(sampling_rate, waveform, n);
@@ -210,7 +234,10 @@ class OfflineStream::Impl {
   }
 
   int32_t FeatureDim() const {
-    if (is_moonshine_ || is_omnilingual_asr_) {
+    if (fa_) {
+      return fa_->FeatureDim();
+    }
+    if (keep_samples_) {
       return samples_.size();
     }
 
@@ -218,7 +245,10 @@ class OfflineStream::Impl {
   }
 
   std::vector<float> GetFrames() const {
-    if (is_moonshine_ || is_omnilingual_asr_) {
+    if (fa_) {
+      return fa_->GetFrames();
+    }
+    if (keep_samples_) {
       return samples_;
     }
 
@@ -350,18 +380,18 @@ class OfflineStream::Impl {
   std::unique_ptr<knf::OnlineFbank> fbank_;
   std::unique_ptr<knf::OnlineMfcc> mfcc_;
   std::unique_ptr<knf::OnlineWhisperFbank> whisper_fbank_;
+  std::unique_ptr<FaFeatureExtractor> fa_;
   knf::FbankOptions opts_;
   knf::MfccOptions mfcc_opts_;
   OfflineRecognitionResult r_;
   ContextGraphPtr context_graph_;
   bool is_ced_ = false;
-  bool is_moonshine_ = false;
-  bool is_omnilingual_asr_ = false;
+  bool keep_samples_ = false;
   bool whisper_align_to_stft_center_ = false;
   int32_t whisper_center_padding_ = 0;
   int64_t whisper_num_samples_ = 0;
 
-  // used only when (is_moonshine_ || is_omnilingual_asr_) == true
+  // used only when keep_samples_ == true
   std::vector<float> samples_;
 
   std::unordered_map<std::string, std::string> options_;
@@ -381,6 +411,12 @@ OfflineStream::OfflineStream(MoonshineTag tag)
 
 OfflineStream::OfflineStream(OmnilingualAsrTag tag)
     : impl_(std::make_unique<Impl>(tag)) {}
+
+OfflineStream::OfflineStream(SpeakerDiarizationTag tag)
+    : impl_(std::make_unique<Impl>(tag)) {}
+
+OfflineStream::OfflineStream(const FaFeatureConfig &config)
+    : impl_(std::make_unique<Impl>(config)) {}
 
 OfflineStream::~OfflineStream() = default;
 
@@ -436,19 +472,35 @@ std::string OfflineRecognitionResult::AsJsonString() const {
 
   os << "\"lang\""
      << ": ";
-  os << std::quoted(lang) << ", ";
+  os << QuoteJsonString(lang) << ", ";
+
+  os << "\"lang_probs\""
+     << ": ";
+  os << "[";
+  {
+    // lang probs already filtered by top_k_langs
+    std::string lp_sep = "";
+    for (const auto &lp : lang_probs) {
+      os << lp_sep << "{"
+         << "\"lang\": " << QuoteJsonString(lp.first) << ", "
+         << "\"prob\": " << std::fixed << std::setprecision(6) << lp.second
+         << "}";
+      lp_sep = ", ";
+    }
+  }
+  os << "], ";
 
   os << "\"emotion\""
      << ": ";
-  os << std::quoted(emotion) << ", ";
+  os << QuoteJsonString(emotion) << ", ";
 
   os << "\"event\""
      << ": ";
-  os << std::quoted(event) << ", ";
+  os << QuoteJsonString(event) << ", ";
 
   os << "\"text\""
      << ": ";
-  os << std::quoted(text) << ", ";
+  os << QuoteJsonString(text) << ", ";
 
   os << "\""
      << "timestamps"
@@ -492,7 +544,7 @@ std::string OfflineRecognitionResult::AsJsonString() const {
          << "\"";
       os.flags(oldFlags);
     } else {
-      os << sep << std::quoted(t);
+      os << sep << QuoteJsonString(t);
     }
     sep = ", ";
   }
@@ -546,7 +598,7 @@ std::string OfflineRecognitionResult::AsJsonString() const {
     os << "\"segment_texts\": [";
     sep = "";
     for (const auto &t : segment_texts) {
-      os << sep << std::quoted(t);
+      os << sep << QuoteJsonString(t);
       sep = ", ";
     }
     os << "]";
