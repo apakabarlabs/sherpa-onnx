@@ -4,11 +4,14 @@
 //! See `rust-api-examples/examples/offline_speaker_diarization.rs`.
 
 use crate::{speaker_embedding::SpeakerEmbeddingExtractorConfig, utils::to_c_ptr};
+use serde::{Deserialize, Serialize};
 use sherpa_onnx_sys as sys;
 use std::ffi::CString;
+use std::os::raw::c_void;
 use std::slice;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 /// Pyannote segmentation model path.
 pub struct OfflineSpeakerSegmentationPyannoteModelConfig {
     pub model: Option<String>,
@@ -37,7 +40,8 @@ impl OfflineSpeakerSegmentationPyannoteModelConfig {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 /// Segmentation model configuration for diarization.
 pub struct OfflineSpeakerSegmentationModelConfig {
     pub pyannote: OfflineSpeakerSegmentationPyannoteModelConfig,
@@ -70,7 +74,8 @@ impl OfflineSpeakerSegmentationModelConfig {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 /// Fast clustering options used after segmentation and embedding extraction.
 pub struct FastClusteringConfig {
     pub num_clusters: i32,
@@ -98,7 +103,8 @@ impl FastClusteringConfig {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 /// Top-level configuration for [`OfflineSpeakerDiarization`].
 pub struct OfflineSpeakerDiarizationConfig {
     pub segmentation: OfflineSpeakerSegmentationModelConfig,
@@ -195,6 +201,73 @@ impl OfflineSpeakerDiarization {
         } else {
             Some(OfflineSpeakerDiarizationResult { ptr })
         }
+    }
+
+    /// Same as [`process`](Self::process), but reports progress.
+    ///
+    /// `callback` receives `(num_processed_chunks, num_total_chunks)` after
+    /// each speaker embedding is computed. Segmentation before that step and
+    /// clustering after it report nothing. Audio that fits in one segmentation
+    /// chunk computes no embedding; the callback then receives `(1, 1)` once,
+    /// before the result is built. The C API ignores the callback's
+    /// return value, so the callback cannot stop processing early.
+    /// A panic in the callback aborts the process.
+    pub fn process_with_callback<F>(
+        &self,
+        samples: &[f32],
+        mut callback: F,
+    ) -> Option<OfflineSpeakerDiarizationResult>
+    where
+        F: FnMut(i32, i32),
+    {
+        let ptr = unsafe {
+            sys::SherpaOnnxOfflineSpeakerDiarizationProcessWithCallback(
+                self.ptr,
+                samples.as_ptr(),
+                samples.len() as i32,
+                Some(progress_callback_trampoline::<F>),
+                &mut callback as *mut F as *mut c_void,
+            )
+        };
+        if ptr.is_null() {
+            None
+        } else {
+            Some(OfflineSpeakerDiarizationResult { ptr })
+        }
+    }
+}
+
+unsafe extern "C" fn progress_callback_trampoline<F>(
+    num_processed_chunks: i32,
+    num_total_chunks: i32,
+    arg: *mut c_void,
+) -> i32
+where
+    F: FnMut(i32, i32),
+{
+    // The C function invokes the callback synchronously and does not retain this pointer.
+    let cb = &mut *(arg as *mut F);
+    cb(num_processed_chunks, num_total_chunks);
+    0
+}
+
+#[cfg(test)]
+mod callback_tests {
+    use super::*;
+
+    #[test]
+    fn trampoline_updates_borrowed_state() {
+        fn invoke<F: FnMut(i32, i32)>(callback: &mut F) {
+            let arg = callback as *mut F as *mut c_void;
+            unsafe {
+                progress_callback_trampoline::<F>(1, 2, arg);
+                progress_callback_trampoline::<F>(2, 2, arg);
+            }
+        }
+
+        let mut progress = Vec::new();
+        invoke(&mut |done, total| progress.push((done, total)));
+        assert_eq!(progress, [(1, 2), (2, 2)]);
     }
 }
 
